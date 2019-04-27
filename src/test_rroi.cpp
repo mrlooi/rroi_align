@@ -63,10 +63,13 @@ int main()
   CUDA_CHECK(cudaMalloc(&top_data_d, top_data_size * sizeof(float)));
 
   CUDATimer timer;
-  auto write_output = [top_data_h, top_data_size](const std::string& filename) {
+  auto write_output = [top_data_h, channels, pooled_height, pooled_width, top_data_size](const std::string& filename) {
     std::fstream fout(filename, std::ios::out);
     for (auto i = 0; i < top_data_size; i++) {
       fout << top_data_h[i] << " ";
+      if ((i+1) % (pooled_width * pooled_height) == 0) {
+        fout << std::endl;
+      }
     }
   };
 
@@ -98,6 +101,7 @@ int main()
   // Test RROIAlign_forward
   CUDA_CHECK(cudaMemset(top_data_d, 0, top_data_size));
   std::memset(top_data_h, 0, top_data_size);
+  CUDA_CHECK(cudaDeviceSynchronize());
 
   timer.start();
   RROIAlign_forward(
