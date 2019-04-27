@@ -1,9 +1,9 @@
-#ifndef RROIALIGN_CUDA_H
-#define RROIALIGN_CUDA_H
+#ifndef RROI_ALIGN_H
+#define RROI_ALIGN_H
 
 #include <cuda_runtime.h>
 
-void RROIAlign_forward_golden(
+void RROIAlign_forward(
     int batch_size,
     int num_rois,
     int channels,
@@ -18,4 +18,4 @@ void RROIAlign_forward_golden(
     cudaStream_t stream = 0
     );
 
-#endif /* RROIALIGN_CUDA_H */
+#endif /* RROI_ALIGN_H */
