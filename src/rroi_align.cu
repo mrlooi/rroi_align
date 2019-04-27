@@ -1,39 +1,18 @@
+#include "rroi_align.h"
+
 #include <cmath>
 #include <algorithm>
-
-#include <cuda_runtime.h>
-
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
-
-#include <THC/THC.h>
-#include <THC/THCAtomics.cuh>
-#include <THC/THCDeviceUtils.cuh>
+#include <cuda.h>
 
 #include "rotate_rect_ops.h"
-
-
-#define CUDA_CHECK(call) { \
-  cudaError_t err; \
-  if ((err = (call)) != cudaSuccess) { \
-    fprintf(stderr, "Got error %s at %s:%d\n", cudaGetErrorString(err), \
-        __FILE__, __LINE__); \
-    exit(1); \
-  } \
-}
+#include "cuda_utils.h"
 
 template <typename T>
-__device__ inline T deg2rad(const T& deg)
-{
-    return deg / 180.0 * 3.1415926535;
-}
-
-template <typename T>
-__global__ void compute_transform(
+__global__ void compute_transform_matrix(
     T* __restrict__ matrix,
     const T* __restrict__ rois,
-    const int num_rois,
     const float spatial_scale,
+    const int num_rois,
     const int pooled_height, const int pooled_width)
 {
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_rois; i += blockDim.x * gridDim.x) {
@@ -41,8 +20,8 @@ __global__ void compute_transform(
     T cx = rois[step + 1] * spatial_scale;
     T cy = rois[step + 2] * spatial_scale;
     // Force malformed ROIs to be 1x1
-    T w = std::max(rois[step + 3] * spatial_scale, T(1));
-    T h = std::max(rois[step + 4] * spatial_scale, T(1));
+    T w = max(rois[step + 3] * spatial_scale, T(1));
+    T h = max(rois[step + 4] * spatial_scale, T(1));
     T angle = deg2rad(rois[step + 5]);
 
     // TransformPrepare
@@ -101,17 +80,17 @@ __global__ void compute_roi_pool_pts_coalesced(
 
 template <typename T>
 __device__ inline void get_rotated_bounding_box(
-    int& leftMost, int& topMost,
-    int& rightMost, int& bottomMost,
+    int& left, int& top,
+    int& right, int& bottom,
     const T* pts,
     const int pt_num,
     const int idx,
     const int width, const int height)
 {
-  leftMost =   int(std::max(std::min(std::min(pts[0*pt_num+idx], pts[2*pt_num+idx]), std::min(pts[4*pt_num+idx], pts[6*pt_num+idx])), 0.0));
-  topMost =    int(std::max(std::min(std::min(pts[1*pt_num+idx], pts[3*pt_num+idx]), std::min(pts[5*pt_num+idx], pts[7*pt_num+idx])), 0.0));
-  rightMost =  int(std::min(std::max(std::max(pts[0*pt_num+idx], pts[2*pt_num+idx]), std::max(pts[4*pt_num+idx], pts[6*pt_num+idx])) + 1, width - 1.0));
-  bottomMost = int(std::min(std::max(std::max(pts[1*pt_num+idx], pts[3*pt_num+idx]), std::max(pts[5*pt_num+idx], pts[7*pt_num+idx])) + 1, height - 1.0));
+  left   = int(max(min(min(pts[0*pt_num+idx], pts[2*pt_num+idx]), min(pts[4*pt_num+idx], pts[6*pt_num+idx])), T(0.0)));
+  top    = int(max(min(min(pts[1*pt_num+idx], pts[3*pt_num+idx]), min(pts[5*pt_num+idx], pts[7*pt_num+idx])), T(0.0)));
+  right  = int(min(max(max(pts[0*pt_num+idx], pts[2*pt_num+idx]), max(pts[4*pt_num+idx], pts[6*pt_num+idx])) + 1, T(width - 1.0)));
+  bottom = int(min(max(max(pts[1*pt_num+idx], pts[3*pt_num+idx]), max(pts[5*pt_num+idx], pts[7*pt_num+idx])) + 1, T(height - 1.0)));
 }
 
 template <typename T>
@@ -125,32 +104,33 @@ __device__ inline T get_rotated_bounding_box_area(
 
 template <typename T>
 __global__ void compute_weight(
-    T* top_data,
-    const T* bottom_data,
-    const T* roi_pool_pts,
+    T* __restrict__ top_data,
+    const T* __restrict__ bottom_data,
+    const T* __restrict__ roi_pool_pts,
+    const T* __restrict__ rois,
+    const float spatial_scale,
     const int num_rois,
     const int channels, const int height, const int width,
     const int pooled_height, const int pooled_width)
 {
+  const int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_rois * channels * pooled_height * pooled_width; i += blockDim.x * gridDim.x) {
     // (n, c, ph, pw) is an element in the pooled output
-    int pw = i % pooled_width;
-    int ph = (i / pooled_width) % pooled_height;
+    // int pw = i % pooled_width;
+    // int ph = (i / pooled_width) % pooled_height;
     int c = (i / pooled_width / pooled_height) % channels;
     int n = i / pooled_width / pooled_height / channels;
 
-    const T* offset_bottom_rois = bottom_rois + n * 6;  // batch_ind, xc, yc, w, h, angle
-    int roi_batch_ind = offset_bottom_rois[0];
+    int left, top, right, bottom;
+    get_rotated_bounding_box(left, top, right, bottom, roi_pool_pts, roi_pool_pt_num, n, width, height);
 
+    int roi_batch_ind = (rois + n * 6)[0];  // ROI: batch_ind, xc, yc, w, h, angle
     const T* offset_bottom_data = bottom_data + (roi_batch_ind * channels + c) * height * width;
-
-    int leftMost, topMost, rightMost, bottomMost;
-    get_rotated_bounding_box(leftMost, topMost, rightMost, bottomMost, roi_pool_pts, num_rois*pooled_height*pooled_width, n, width, height);
     T rbbox_area = get_rotated_bounding_box_area(spatial_scale, offset_bottom_data[4], offset_bottom_data[3], pooled_height, pooled_width);
 
     T output_val = 0.0;
-    for (int hh = topMost; hh < bottomMost+1; ++hh) {
-      for (int ww = leftMost; ww < rightMost+1; ++ww) {
+    for (int hh = top; hh < bottom+1; ++hh) {
+      for (int ww = left; ww < right+1; ++ww) {
         T pixel_rect_vertices[8] = {ww+0.0f,hh+0.0f,ww+1.0f,hh+0.0f,ww+1.0f,hh+1.0f,ww+0.0f,hh+1.0f};
 
         T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts);
@@ -162,71 +142,70 @@ __global__ void compute_weight(
   }
 }
 
-at::Tensor RROIAlign_forward_cuda(const at::Tensor& input,
-                                const at::Tensor& rois,
-                                const float spatial_scale,
-                                const int pooled_height,
-                                const int pooled_width)
+void RROIAlign_forward(
+    int batch_size,
+    int num_rois,
+    int channels,
+    int height,
+    int width,
+    int pooled_height,
+    int pooled_width,
+    float spatial_scale,
+    float* bottom_data_d,
+    float* rois_d,
+    float* top_data_d,
+    cudaStream_t stream
+    )
 {
-  AT_ASSERTM(input.type().is_cuda(), "input must be a CUDA tensor");
-  AT_ASSERTM(rois.type().is_cuda(), "rois must be a CUDA tensor");
+  int top_data_size = num_rois * channels * pooled_height * pooled_width * sizeof(float);
 
-  auto num_rois = rois.size(0);
-  auto channels = input.size(1);
-  auto height = input.size(2);
-  auto width = input.size(3);
-
-  auto output = at::empty({num_rois, channels, pooled_height, pooled_width}, input.options());
-  auto output_size = num_rois * pooled_height * pooled_width * channels;
-//  auto argmax = at::zeros({num_rois, channels, pooled_height, pooled_width}, input.options().dtype(at::kInt));
-
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-  scalar_t* transfrom_matrix_d;
-  CUDA_CHECK(cudaMalloc(static_cast<void **>(&transfrom_matrix_d), 6*num_rois*sizeof(scalar_t)));
+  float* transfrom_matrix_d;
+  CUDA_CHECK(cudaMalloc(&transfrom_matrix_d, 6 * num_rois * sizeof(float)));
   {
     int grid = std::min(num_rois, 1024);
     int block = static_cast<int>(std::ceil(num_rois * 1.0 / grid));
-    compute_transform<scalar_t><<<grid, block, 0, stream>>>(transfrom_matrix_d,
-        rois.contiguous().data<scalar_t>(),
-        num_rois,
+    compute_transform_matrix<float><<<grid, block, 0, stream>>>(transfrom_matrix_d,
+        rois_d,
         spatial_scale,
+        num_rois,
         pooled_height,
         pooled_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
   }
 
-  scalar_t* roi_pool_pts_d;
-  CUDA_CHECK(cudaMalloc(static_cast<void **>(&roi_pool_pts_d), 6*output_size*sizeof(scalar_t)));
+  float* roi_pool_pts_d;
+  int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
+  CUDA_CHECK(cudaMalloc(&roi_pool_pts_d, 8 * roi_pool_pt_num * sizeof(float)));
   {
-    int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
     int grid = std::min(roi_pool_pt_num, 1024);
     int block = static_cast<int>(std::ceil(roi_pool_pt_num * 1.0 / grid));
-    compute_roi_pool_pts_coalesced<scalar_t><<<grid, block, 0, stream>>>(roi_pool_pts_d,
+    compute_roi_pool_pts_coalesced<float><<<grid, block, 0, stream>>>(roi_pool_pts_d,
         transfrom_matrix_d,
+        roi_pool_pt_num,
         num_rois,
         pooled_height,
         pooled_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
   }
 
   {
-    int grid = std::min(output_size, 1024);
-    int block = static_cast<int>(std::ceil(output_size * 1.0 / grid));
-    compute_weight<scalar_t><<<grid, block, 0, stream>>>(
-         output.data<scalar_t>(),
-         input.contiguous().data<scalar_t>(),
-         roi_pool_pts_d,
-         num_rois,
-         channels,
-         height,
-         width,
-         pooled_height,
-         pooled_width);
+    int grid = std::min(top_data_size, 1024);
+    int block = static_cast<int>(std::ceil(top_data_size * 1.0 / grid));
+    compute_weight<float><<<grid, block, 0, stream>>>(
+        top_data_d,
+        bottom_data_d,
+        roi_pool_pts_d,
+        rois_d,
+        spatial_scale,
+        num_rois,
+        channels,
+        height,
+        width,
+        pooled_height,
+        pooled_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
   }
 
   CUDA_CHECK(cudaFree(roi_pool_pts_d));
   CUDA_CHECK(cudaFree(transfrom_matrix_d));
-
-  THCudaCheck(cudaGetLastError());
-
-  return output;
 }

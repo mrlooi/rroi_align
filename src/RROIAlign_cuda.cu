@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <algorithm>
-#include <cuda_runtime.h>
 #include <cuda.h>
 
 #include "RROIAlign_cuda.h"
@@ -108,7 +107,7 @@ __global__ void RRoIAlignBackwardFeature(const int nthreads, const T* top_diff,
   } // CUDA_1D_KERNEL_LOOP
 } // RRoIAlignBackward
 
-void RROIAlign_forward_cuda(
+void RROIAlign_forward_golden(
     int batch_size,
     int num_rois,
     int channels,
@@ -119,13 +118,13 @@ void RROIAlign_forward_cuda(
     float spatial_scale,
     float* bottom_data_d,
     float* rois_d,
-    float* top_data_d
+    float* top_data_d,
+    cudaStream_t stream
     )
 {
   auto top_data_size = num_rois * channels * pooled_height * pooled_width * sizeof(float);
   dim3 grid(std::min(static_cast<long>(std::ceil(top_data_size * 1.0 / 512L)), 4096L));
   dim3 block(512);
-  cudaStream_t stream = 0;
   RRoIAlignFForward<float><<<grid, block, 0, stream>>>(
       top_data_size,
       bottom_data_d,
