@@ -1,5 +1,6 @@
 #include "rroi_align.h"
 
+#include <iostream>
 #include <cmath>
 #include <algorithm>
 #include <cuda.h>
@@ -157,14 +158,16 @@ void RROIAlign_forward(
     cudaStream_t stream
     )
 {
-  int top_data_size = num_rois * channels * pooled_height * pooled_width * sizeof(float);
+  long top_data_size = num_rois * channels * pooled_height * pooled_width;
 
   float* transfrom_matrix_d;
   CUDA_CHECK(cudaMalloc(&transfrom_matrix_d, 6 * num_rois * sizeof(float)));
   {
-    int grid = std::min(num_rois, 1024);
-    int block = static_cast<int>(std::ceil(num_rois * 1.0 / grid));
-    compute_transform_matrix<float><<<grid, block, 0, stream>>>(transfrom_matrix_d,
+    int thread_num = std::min(num_rois, 1024);
+    int block_num = static_cast<int>(std::ceil(num_rois * 1.0 / thread_num));
+    // std::cout << "num_rois: " << num_rois << " " << thread_num << " " << block_num << std::endl;
+    compute_transform_matrix<float><<<block_num, thread_num, 0, stream>>>(
+        transfrom_matrix_d,
         rois_d,
         spatial_scale,
         num_rois,
@@ -177,9 +180,11 @@ void RROIAlign_forward(
   int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
   CUDA_CHECK(cudaMalloc(&roi_pool_pts_d, 8 * roi_pool_pt_num * sizeof(float)));
   {
-    int grid = std::min(roi_pool_pt_num, 1024);
-    int block = static_cast<int>(std::ceil(roi_pool_pt_num * 1.0 / grid));
-    compute_roi_pool_pts_coalesced<float><<<grid, block, 0, stream>>>(roi_pool_pts_d,
+    int thread_num = std::min(roi_pool_pt_num, 1024);
+    int block_num = static_cast<int>(std::ceil(roi_pool_pt_num * 1.0 / thread_num));
+    // std::cout << "roi_pool_pt_num: " << roi_pool_pt_num << " " << thread_num << " " << block_num << std::endl;
+    compute_roi_pool_pts_coalesced<float><<<block_num, thread_num, 0, stream>>>(
+        roi_pool_pts_d,
         transfrom_matrix_d,
         roi_pool_pt_num,
         num_rois,
@@ -189,9 +194,14 @@ void RROIAlign_forward(
   }
 
   {
-    int grid = std::min(top_data_size, 1024);
-    int block = static_cast<int>(std::ceil(top_data_size * 1.0 / grid));
-    compute_weight<float><<<grid, block, 0, stream>>>(
+    cudaDeviceProp deviceProperties;
+    int gpu_id = 0;
+    CUDA_CHECK(cudaGetDeviceProperties(&deviceProperties, gpu_id));
+
+    auto thread_num = std::min(top_data_size, 512L);
+    int block_num = std::min(static_cast<int>(std::ceil(top_data_size * 1.0 / thread_num)), deviceProperties.maxGridSize[0]);
+    // std::cout << "top_data_size: " << top_data_size << " " << thread_num << " " << block_num << std::endl;
+    compute_weight<float><<<block_num, thread_num, 0, stream>>>(
         top_data_d,
         bottom_data_d,
         roi_pool_pts_d,

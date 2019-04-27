@@ -122,7 +122,7 @@ void RROIAlign_forward_golden(
     cudaStream_t stream
     )
 {
-  auto top_data_size = num_rois * channels * pooled_height * pooled_width * sizeof(float);
+  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
   dim3 grid(std::min(static_cast<long>(std::ceil(top_data_size * 1.0 / 512L)), 4096L));
   dim3 block(512);
   RRoIAlignFForward<float><<<grid, block, 0, stream>>>(
