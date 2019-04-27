@@ -71,6 +71,7 @@ int main()
   };
 
   // Use golden function
+#if 1
   timer.start();
   RROIAlign_forward_golden(
       batch_size,
@@ -92,6 +93,7 @@ int main()
 
   CUDA_CHECK(cudaMemcpy(top_data_h, top_data_d, top_data_size, cudaMemcpyDeviceToHost));
   write_output("golden");
+#endif
 
   // Test RROIAlign_forward
   CUDA_CHECK(cudaMemset(top_data_d, 0, top_data_size));
