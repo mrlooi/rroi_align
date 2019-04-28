@@ -398,7 +398,7 @@ void RROIAlign_forward(
   }
 #endif
 
-#if 1
+#if 0
   unique_ptr_device<float> roi_pool_pts_d(nullptr);
   int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
   CUDA_CHECK(cudaMalloc((void **) &roi_pool_pts_d, 8 * roi_pool_pt_num * sizeof(float)));
@@ -434,7 +434,7 @@ void RROIAlign_forward(
   }
 #endif
 
-#if 0
+#if 1
   {
     cudaDeviceProp deviceProperties;
     int gpu_id = 0;
