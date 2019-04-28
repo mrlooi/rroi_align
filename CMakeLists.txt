@@ -3,14 +3,16 @@ project (rect_intersects)
 
 add_definitions("-std=c++11")
 add_definitions("-fPIC")
-# add_definitions("-g")
 
 # set(CMAKE_CXX_FLAGS "-w ${CMAKE_CXX_FLAGS} -fopenmp")
 
 find_package(CUDA)  # cuda
-# set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -std=c++11; -g -G)
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -std=c++11)
+
+list(APPEND CUDA_NVCC_FLAGS "-std=c++11")
 list(APPEND CUDA_NVCC_FLAGS "--compiler-options -fPIC")
+
+set(CUDA_NVCC_FLAGS_DEBUG   "${CUDA_NVCC_FLAGS_DEBUG};-G;-g")
+set(CUDA_NVCC_FLAGS_RELEASE "${CUDA_NVCC_FLAGS_RELEASE};-O3;-DNDEBUG;--use_fast_math")
 
 # own include dirs
 include_directories("include")
