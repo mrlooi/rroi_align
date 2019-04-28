@@ -30,40 +30,40 @@ int main()
       >> pooled_width
       >> spatial_scale;
 
-  float* bottom_data_h;
-  float* bottom_data_d;
+  unique_ptr_host<float> bottom_data_h(nullptr);
+  unique_ptr_device<float> bottom_data_d(nullptr);
   auto bottom_data_size = batch_size * channels * height * width;
-  CUDA_CHECK(cudaMallocHost(&bottom_data_h, bottom_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc(&bottom_data_d, bottom_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &bottom_data_h, bottom_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &bottom_data_d, bottom_data_size * sizeof(float)));
 
   // Initialize bottom_data_h
   for (auto i = 0; i < bottom_data_size; i++) {
     fin >> bottom_data_h[i];
   }
-  CUDA_CHECK(cudaMemcpy(bottom_data_d, bottom_data_h, bottom_data_size, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(bottom_data_d.get(), bottom_data_h.get(), bottom_data_size, cudaMemcpyHostToDevice));
 
-  float* rois_h;
-  float* rois_d;
+  unique_ptr_host<float> rois_h(nullptr);
+  unique_ptr_device<float> rois_d(nullptr);
   auto rois_size = num_rois * 6;
-  CUDA_CHECK(cudaMallocHost(&rois_h, rois_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc(&rois_d, rois_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &rois_h, rois_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &rois_d, rois_size * sizeof(float)));
 
   // Initialize rois_h
   for (auto i = 0; i < num_rois * 6; i++) {
     fin >> rois_h[i];
   }
-  CUDA_CHECK(cudaMemcpy(rois_d, rois_h, rois_size, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(rois_d.get(), rois_h.get(), rois_size, cudaMemcpyHostToDevice));
 
   fin.close();
 
-  float* top_data_h;
-  float* top_data_d;
+  unique_ptr_host<float> top_data_h(nullptr);
+  unique_ptr_device<float> top_data_d(nullptr);
   auto top_data_size = num_rois * channels * pooled_height * pooled_width;
-  CUDA_CHECK(cudaMallocHost(&top_data_h, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc(&top_data_d, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &top_data_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_data_d, top_data_size * sizeof(float)));
 
   CUDATimer timer;
-  auto write_output = [top_data_h, channels, pooled_height, pooled_width, top_data_size](const std::string& filename) {
+  auto write_output = [&top_data_h, channels, pooled_height, pooled_width, top_data_size](const std::string& filename) {
     std::fstream fout(filename, std::ios::out);
     for (auto i = 0; i < top_data_size; i++) {
       fout << top_data_h[i] << " ";
@@ -85,22 +85,22 @@ int main()
       pooled_height,
       pooled_width,
       spatial_scale,
-      bottom_data_d,
-      rois_d,
-      top_data_d,
+      bottom_data_d.get(),
+      rois_d.get(),
+      top_data_d.get(),
       0
       );
   CUDA_CHECK(cudaDeviceSynchronize());
   timer.stop();
   std::cout << "RROIAlign_forward_golden: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_h, top_data_d, top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("golden");
 #endif
 
   // Test RROIAlign_forward
-  CUDA_CHECK(cudaMemset(top_data_d, 0, top_data_size));
-  std::memset(top_data_h, 0, top_data_size);
+  CUDA_CHECK(cudaMemset(top_data_d.get(), 0, top_data_size));
+  std::memset(top_data_h.get(), 0, top_data_size);
   CUDA_CHECK(cudaDeviceSynchronize());
 
   timer.start();
@@ -113,26 +113,17 @@ int main()
       pooled_height,
       pooled_width,
       spatial_scale,
-      bottom_data_d,
-      rois_d,
-      top_data_d,
+      bottom_data_d.get(),
+      rois_d.get(),
+      top_data_d.get(),
       0
       );
   CUDA_CHECK(cudaDeviceSynchronize());
   timer.stop();
   std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_h, top_data_d, top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("output");
-
-  CUDA_CHECK(cudaFreeHost(bottom_data_h));
-  CUDA_CHECK(cudaFree(bottom_data_d));
-
-  CUDA_CHECK(cudaFreeHost(rois_h));
-  CUDA_CHECK(cudaFree(rois_d));
-
-  CUDA_CHECK(cudaFreeHost(top_data_h));
-  CUDA_CHECK(cudaFree(top_data_d));
 
   return 0;
 }
