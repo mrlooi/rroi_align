@@ -234,7 +234,7 @@ __device__ inline void get_rotated_bounding_box(
 }
 
 template <typename T>
-__device__ inline double get_rotated_bounding_box_area(
+__device__ inline T get_rotated_bounding_box_area(
     const float spatial_scale,
     const T roi_height, const T roi_width,
     const int pooled_height, const int pooled_width)
@@ -266,14 +266,17 @@ __global__ void compute_weight(
 
       const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
       int roi_batch_ind = rois_offset[0];
-      double rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
+      T rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
 
       int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
       // int roi_pool_idx_shared = threadIdx.x * threadIdx.y / (pooled_width * pooled_height * channels);
-      int roi_pool_idx_shared = threadIdx.x;
-      int roi_pool_offset_shared = 8 * roi_pool_idx_shared;
-      // for (int k = 0; k < 8; k++) {
-      //   roi_pool_pts_shared[pooled_height*pooled_width*roi_pool_idx_shared + k] = roi_pool_pts[k * roi_pool_pt_num + roi_pool_idx];
+      // int roi_pool_idx_shared = threadIdx.x;
+      // int roi_pool_offset_shared = 8 * roi_pool_idx_shared;
+      int roi_pool_offset_shared = 0;
+      // if (threadIdx.x == 0) {
+      //   for (int k = 0; k < 8; k++) {
+      //     roi_pool_pts_shared[pooled_height*pooled_width*roi_pool_idx_shared + k] = roi_pool_pts[k * roi_pool_pt_num + roi_pool_idx];
+      //   }
       // }
       if (c < 8) {
         roi_pool_pts_shared[roi_pool_offset_shared + c] = roi_pool_pts[c * roi_pool_pt_num + roi_pool_idx];
@@ -289,7 +292,7 @@ __global__ void compute_weight(
         for (int ww = left; ww < right+1; ++ww) {
           T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
           T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
-          double px_weight = inter_area / rbbox_area;
+          T px_weight = inter_area / rbbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
       }
@@ -434,7 +437,7 @@ void RROIAlign_forward(
   }
 #endif
 
-#if 1
+#if 0
   {
     cudaDeviceProp deviceProperties;
     int gpu_id = 0;
@@ -469,19 +472,15 @@ void RROIAlign_forward(
     int gpu_id = 0;
     CUDA_CHECK(cudaGetDeviceProperties(&deviceProperties, gpu_id));
 
-    // int thread_num_x = std::min(pooled_width * pooled_height, 1024);
     int max_thread_num = 512;
     int thread_num_y = std::min(channels, max_thread_num);
-    int thread_num_x = max_thread_num / thread_num_y;
-    // int block_num_x = static_cast<int>(std::ceil(pooled_width * pooled_height * num_rois * 1.0 / thread_num_x));
+    // int thread_num_x = max_thread_num / thread_num_y;
+    int thread_num_x = 1;
     int block_num_x = std::min(static_cast<int>(std::ceil(pooled_width * pooled_height * num_rois * 1.0 / thread_num_x)), deviceProperties.maxGridSize[0]);
     int block_num_y = static_cast<int>(std::ceil(channels * 1.0 / thread_num_y));
     dim3 block(thread_num_x, thread_num_y);
     dim3 grid(block_num_x, block_num_y);
-    // int num_shared_rois_pt_num = static_cast<int>(std::ceil(thread_num_x * thread_num_y * 1.0 / (pooled_width * pooled_height * channels)));
-    // int num_shared_rois_pt_num = 1;
-    // size_t shared_mem_size = pooled_width * pooled_height * num_shared_rois_pt_num * 8 * sizeof(float);
-    size_t shared_mem_size = pooled_width * 8 * sizeof(float);
+    size_t shared_mem_size = 8 * sizeof(float);
     compute_weight<float><<<grid, block, shared_mem_size, stream>>>(
         top_data_d,
         bottom_data_d,
