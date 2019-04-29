@@ -278,7 +278,7 @@ __global__ void compute_weight(
       //     roi_pool_pts_shared[pooled_height*pooled_width*roi_pool_idx_shared + k] = roi_pool_pts[k * roi_pool_pt_num + roi_pool_idx];
       //   }
       // }
-      if (c < 8) {
+      if (threadIdx.x == 0 && c < 8) {
         roi_pool_pts_shared[roi_pool_offset_shared + c] = roi_pool_pts[c * roi_pool_pt_num + roi_pool_idx];
       }
       __syncthreads();
