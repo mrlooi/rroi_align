@@ -122,7 +122,6 @@ __global__ void compute_roi_pool_pts_shared(
     const int pooled_height, const int pooled_width)
 {
   __shared__ T matrix[6];
-  // T matrix[6];
 
   // int idx = blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x * blockDim.y + threadIdx.y;
   int idx = blockIdx.x * (pooled_height * pooled_width) + threadIdx.x * pooled_width + threadIdx.y;
@@ -144,13 +143,6 @@ __global__ void compute_roi_pool_pts_shared(
     __threadfence_block();
   }
   __syncthreads();
-
-  // compute_transform_matrix(
-  //     matrix,
-  //     rois + n*6,
-  //     spatial_scale,
-  //     pooled_height,
-  //     pooled_width);
 
   // ORDER IN CLOCKWISE OR ANTI-CLOCKWISE
   // (0,1),(0,0),(1,0),(1,1)
@@ -242,6 +234,8 @@ __device__ inline T get_rotated_bounding_box_area(
   return roi_width * spatial_scale / pooled_width * roi_height * spatial_scale / pooled_height;  // area = w * h
 }
 
+#if 1
+// NOTE: only cache one roi_pool_pt in the shared memory
 template <typename T>
 __global__ void compute_weight(
     T* __restrict__ top_data,
@@ -301,6 +295,62 @@ __global__ void compute_weight(
     }
   }
 }
+#endif
+
+#if 0
+// NOTE: cache multiple roi_pool_pts in the shared mem
+template <typename T>
+__global__ void compute_weight(
+    T* __restrict__ top_data,
+    const T* __restrict__ bottom_data,
+    const T* __restrict__ roi_pool_pts,
+    const T* __restrict__ rois,
+    const float spatial_scale,
+    const int num_rois,
+    const int channels, const int height, const int width,
+    const int pooled_height, const int pooled_width)
+{
+  extern __shared__ T roi_pool_pts_shared[];
+
+  const int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
+
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_rois * pooled_height * pooled_width; i += blockDim.x * gridDim.x) {
+    int c = blockIdx.y * blockDim.y + threadIdx.y;
+    if (c < channels) {
+      int pw = i % pooled_width;
+      int ph = (i / pooled_width) % pooled_height;
+      int n = i / pooled_width / pooled_height;
+
+      const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
+      int roi_batch_ind = rois_offset[0];
+      T rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
+
+      int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
+      int roi_pool_offset_shared = 8 * threadIdx.x;
+      if (threadIdx.y < 8) {
+        roi_pool_pts_shared[roi_pool_offset_shared + threadIdx.y] = roi_pool_pts[threadIdx.y * roi_pool_pt_num + roi_pool_idx];
+      }
+      __syncthreads();
+
+      int left, top, right, bottom;
+      get_rotated_bounding_box(left, top, right, bottom, roi_pool_pts_shared + roi_pool_offset_shared, width, height);
+
+      const T* bottom_data_offset = bottom_data + (roi_batch_ind * channels + c) * height * width;
+      T output_val = 0.0;
+      for (int hh = top; hh < bottom+1; ++hh) {
+        for (int ww = left; ww < right+1; ++ww) {
+          T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
+          T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
+          T px_weight = inter_area / rbbox_area;
+          output_val += px_weight * bottom_data_offset[hh * width + ww];
+        }
+      }
+      int top_data_idx = (n * channels + c) * pooled_width * pooled_height + ph * pooled_width + pw;
+      top_data[top_data_idx] = output_val;
+    }
+  }
+}
+#endif
 
 // local memory version
 template <typename T>
@@ -473,6 +523,8 @@ void RROIAlign_forward(
     CUDA_CHECK(cudaGetDeviceProperties(&deviceProperties, gpu_id));
 
     int max_thread_num = 512;
+    // int thread_num_x = std::min(max_thread_num / 8, pooled_width);
+    // int thread_num_y = std::min(max_thread_num / thread_num_x, channels);
     int thread_num_y = std::min(channels, max_thread_num);
     // int thread_num_x = max_thread_num / thread_num_y;
     int thread_num_x = 1;
@@ -480,7 +532,7 @@ void RROIAlign_forward(
     int block_num_y = static_cast<int>(std::ceil(channels * 1.0 / thread_num_y));
     dim3 block(thread_num_x, thread_num_y);
     dim3 grid(block_num_x, block_num_y);
-    size_t shared_mem_size = 8 * sizeof(float);
+    size_t shared_mem_size = 8 * thread_num_x * sizeof(float);
     compute_weight<float><<<grid, block, shared_mem_size, stream>>>(
         top_data_d,
         bottom_data_d,
