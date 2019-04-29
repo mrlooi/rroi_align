@@ -5,7 +5,7 @@ test:
   script:
     - mkdir build
     - cd build
-    - cmake .. -DCMAKE_BUILD_TYPE=Release
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-5.4.0 -DCMAKE_CXX_COMPILER=g++-5.4.0
     - make
 
       # Generate a random testcase into a file named "testcase"
