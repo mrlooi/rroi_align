@@ -471,5 +471,199 @@ __DEVICE__ void compute_roi_pool_pts(const T* roi, T* out_pts, const float spati
 
 }
 
+// special cases for rotated box and axis-aligned box
+
+template <typename T>
+__DEVICE__ inline bool is_same_rbox_aabox(
+    const T rbox_pts[8],
+    const int min_x,
+    const int max_x,
+    const int min_y,
+    const int max_y
+    const double elapsed = 1e-5)
+{
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    bool is_different_x = (fabs(rbox_pts[i*2] - min_x) > elapsed) && (fabs(rbox_pts[i*2] - max_x) > elapsed);
+    bool is_different_y = (fabs(rbox_pts[i*2+1] - min_y) > elapsed) && (fabs(rbox_pts[i*2+1] - max_y) > elapsed);
+    if (is_different_x || is_different_y) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename T>
+__DEVICE__ inline bool is_point_in_rbox(
+    const T rbox_pts[8],
+    const T rbox_line_params[8],
+    const int x,
+    const int y
+    )
+{
+  // We do a sign test to see which side the point lies.
+  // If the point all lie on the same sign for all 4 sides of the rect,
+  // then there's an intersection
+  int num_pos_sign = 0;
+  int num_neg_sign = 0;
+
+  for(int j = 0; j < 4; j++) {
+    // line equation: Ax + By + C = 0
+    // see which side of the line this point is at
+    T A = -rbox_line_params[j*2+1];
+    T B = rbox_line_params[j*2];
+    T C = -(A * rbox_pts[j*2] + B * rbox_pts[j*2+1]);
+    T s = A*x + B*y + C;
+
+    if (s >= 0) {
+      ++ num_pos_sign;
+    } else {
+      ++ num_neg_sign;
+    }
+  }
+
+  return (num_pos_sign == 4 || num_neg_sign == 4);
+}
+
+#if 0
+template <typename T>
+__DEVICE__ inline bool is_aabox_in_rbox(
+    const T rbox_pts[8],
+    const int min_x,
+    const int max_x,
+    const int min_y,
+    const int max_y
+    )
+{
+}
+#endif
+
+template <typename T>
+__DEVICE__ inline bool is_rbox_in_aabox(
+    const T rbox_pts[8],
+    const int min_x,
+    const int max_x,
+    const int min_y,
+    const int max_y
+    )
+{
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    if (rbox_pts[i*2] < min_x || rbox_pts[i*2] > max_x) {
+      return false;
+    }
+    if (rbox_pts[i*2+1] < min_y || rbox_pts[i*2+1] > max_y) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename T>
+__DEVICE__ inline bool get_itersect_y_aabox(
+    T& y,
+    const T rbox_pts[8],
+    // const T rbox_line_params[8],
+    const int rbox_pt_idx,
+    const int x
+    )
+{
+  if (rbox_pts[rbox_pt_idx*2] == rbox_pts[(rbox_pt_idx+1)*2]) {
+    return false;
+  }
+
+  T slope = (rbox_pts[(rbox_pt_idx+1)*2 + 1] - rbox_pts[rbox_pt_idx*2 + 1]) / (rbox_pts[(rbox_pt_idx+1)*2] - rbox_pts[rbox_pt_idx*2]);
+  y = rbox_pts[rbox_pt_idx*2 + 1] + slope * (x - rbox_pts[rbox_pt_idx*2]);
+
+  return true;
+}
+
+template <typename T>
+__DEVICE__ inline bool get_itersect_x_aabox(
+    T& x,
+    const T rbox_pts[8],
+    // const T rbox_line_params[8],
+    const int rbox_pt_idx,
+    const int y
+    )
+{
+  if (rbox_pts[rbox_pt_idx*2 + 1] == rbox_pts[(rbox_pt_idx+1)*2 + 1]) {
+    return false;
+  }
+
+  T rev_slope = (rbox_pts[(rbox_pt_idx+1)*2] - rbox_pts[rbox_pt_idx*2]) / (rbox_pts[(rbox_pt_idx+1)*2 + 1] - rbox_pts[rbox_pt_idx*2 + 1]);
+  x = rbox_pts[rbox_pt_idx*2] + rev_slope * (y - rbox_pts[rbox_pt_idx*2 + 1]);
+
+  return true;
+}
+
+template <typename T>
+__DEVICE__ T itersect_area_rbox_aabox(
+    const T rbox_pts[8],
+    const T rbox_area,
+    const int min_x,
+    const int max_x,
+    const int min_y,
+    const int max_y
+    )
+{
+  T intersection_pts[MAX_RECT_INTERSECTIONS * 2];
+  int num_intersect_pts = 0;
+
+  T area = T(0);
+
+  // rbox is the same as aabox
+  if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
+    area = (max_x - min_x) * (max_y - min_y);
+  }
+
+  // line parameters for rbox
+  // A line from p1 to p2 is: p1 + (p2-p1)*t, t=[0,1]
+  T line_params[8];
+  for (int i = 0; i < 4; i++) {
+    line_params[i*2] = rbox_pts[((i+1)*2) % 8] - rbox_pts[i*2];
+    line_params[i*2+1] = rbox_pts[((i+1)*2) % 8 + 1] - rbox_pts[i*2 + 1];
+  }
+
+  // check whether corner point of aabox is inside the rbox
+  // Manually unroll
+  if (is_point_in_rbox(rbox_pts, line_params, min_x, min_y)) {
+    intersection_pts[num_intersect_pts*2] = min_x;
+    intersection_pts[num_intersect_pts*2+1] = min_y;
+    ++ num_intersect_pts;
+  }
+  if (is_point_in_rbox(rbox_pts, line_params, min_x, max_y)) {
+    intersection_pts[num_intersect_pts*2] = min_x;
+    intersection_pts[num_intersect_pts*2+1] = max_y;
+    ++ num_intersect_pts;
+  }
+  if (is_point_in_rbox(rbox_pts, line_params, max_x, min_y)) {
+    intersection_pts[num_intersect_pts*2] = max_x;
+    intersection_pts[num_intersect_pts*2+1] = min_y;
+    ++ num_intersect_pts;
+  }
+  if (is_point_in_rbox(rbox_pts, line_params, max_x, max_y)) {
+    intersection_pts[num_intersect_pts*2] = max_x;
+    intersection_pts[num_intersect_pts*2+1] = max_y;
+    ++ num_intersect_pts;
+  }
+
+  // aabox is totally inside rbox
+  if (num_intersect_pts == 4) {
+    area = (max_x - min_x) * (max_y - min_y);
+  }
+
+  // rbox is totally inside aabox
+  if (is_rbox_in_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
+    area = rbox_area;
+  }
+
+  // line test - test all line combos for intersection
+
+  // TODO
+  for (int i = 0; i < 4; i++) {
+  }
+
+}
 
 #endif /* ROTATE_RECT_OPS_H */
