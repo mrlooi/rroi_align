@@ -260,7 +260,7 @@ __global__ void compute_weight(
 
       const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
       int roi_batch_ind = rois_offset[0];
-      T rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
+      T rbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
 
       int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
       // int roi_pool_idx_shared = threadIdx.x * threadIdx.y / (pooled_width * pooled_height * channels);
@@ -286,7 +286,7 @@ __global__ void compute_weight(
         for (int ww = left; ww < right+1; ++ww) {
           T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
           T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
-          T px_weight = inter_area / rbbox_area;
+          T px_weight = inter_area / rbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
       }
@@ -323,7 +323,7 @@ __global__ void compute_weight(
 
       const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
       int roi_batch_ind = rois_offset[0];
-      T rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
+      T rbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
 
       int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
       int roi_pool_offset_shared = 8 * threadIdx.x;
@@ -341,7 +341,7 @@ __global__ void compute_weight(
         for (int ww = left; ww < right+1; ++ww) {
           T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
           T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
-          T px_weight = inter_area / rbbox_area;
+          T px_weight = inter_area / rbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
       }
@@ -375,7 +375,7 @@ __global__ void compute_weight_local(
 
       const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
       int roi_batch_ind = rois_offset[0];
-      T rbbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
+      T rbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
 
       int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
       T roi_pool_pts_local[8];
@@ -393,7 +393,7 @@ __global__ void compute_weight_local(
         for (int ww = left; ww < right+1; ++ww) {
           T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
           T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_local);
-          T px_weight = inter_area / rbbox_area;
+          T px_weight = inter_area / rbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
       }
