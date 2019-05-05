@@ -1,4 +1,3 @@
-
 #ifndef ROTATE_RECT_OPS_H
 #define ROTATE_RECT_OPS_H
 
@@ -15,6 +14,10 @@
     using std::max;
     using std::min;
 #endif
+
+
+// #define DEBUG
+
 
 __DEVICE__ const int MAX_RECT_INTERSECTIONS = 8;  // MAX number of intersections between two rotated rectangles is 8
 
@@ -312,7 +315,10 @@ __DEVICE__ int rotatedRectangleIntersection( const T* rect_pts1, const T* rect_p
     // Check for vertices from rect1 inside rect2
     num_intersects = compute_rect_vertices_intersects(rect_pts1, rect_pts2, vec2, intersectingRegion2 + out_num_intersects * 2);
     out_num_intersects += num_intersects;
-    // printf("compute_rect_vertices_intersects 1 inside 2: %d\n", num_intersects);
+
+#ifdef DEBUG
+    printf("compute_rect_vertices_intersects 1 inside 2: %d\n", num_intersects);
+#endif
 
     if (num_intersects == 4) // rect1 is fully inside rect2
     {
@@ -322,7 +328,10 @@ __DEVICE__ int rotatedRectangleIntersection( const T* rect_pts1, const T* rect_p
     // Reverse the check - check for vertices from rect2 inside rect1
     num_intersects = compute_rect_vertices_intersects(rect_pts2, rect_pts1, vec1, intersectingRegion2 + out_num_intersects * 2);
     out_num_intersects += num_intersects;
-    // printf("compute_rect_vertices_intersects 2 inside 1: %d\n", num_intersects);
+
+#ifdef DEBUG
+    printf("compute_rect_vertices_intersects 2 inside 1: %d\n", num_intersects);
+#endif
 
     if (num_intersects == 4) // rect2 is fully inside rect1
     {
@@ -333,7 +342,10 @@ __DEVICE__ int rotatedRectangleIntersection( const T* rect_pts1, const T* rect_p
     num_intersects = compute_rect_line_intersects(rect_pts1, rect_pts2, vec1, vec2, intersectingRegion2 + out_num_intersects * 2);
     out_num_intersects += num_intersects;
 
-    // printf("compute_rect_line_intersects: %d\n", num_intersects);
+#ifdef DEBUG
+    printf("compute_rect_line_intersects: %d\n", num_intersects);
+#endif
+
     if( num_intersects != 0 )
     {
         ret = RectIntersectTypes::INTERSECT_PARTIAL;
@@ -358,6 +370,10 @@ __DEVICE__ float computeRectInterArea(const T* rect_pts1, const T* rect_pts2)
     // int res = rotatedRectangleIntersection2(rect, pixel_rect, inter_pts);
     int num_intersects = 0;
     int res = rotatedRectangleIntersection(rect_pts1, rect_pts2, inter_pts_f, num_intersects);
+
+#ifdef DEBUG
+    printf("computeRectInterArea: num_intersect_pts: %d\n", num_intersects);
+#endif
 
     float interArea = 0.0f;
     if (res == RectIntersectTypes::INTERSECT_NONE)
@@ -417,8 +433,11 @@ __DEVICE__ inline float computeRectIoU(T const * const region1, T const * const 
 
   float iou = area_inter / (area1 + area2 - area_inter + 1e-8);
 
-  // printf("area1: %.3f, area2: %.3f, area_inter: %.3f, iou: %.3f\n",
-  //     area1, area2, area_inter, iou);
+#ifdef DEBUG
+  printf("area1: %.3f, area2: %.3f, area_inter: %.3f, iou: %.3f\n",
+      area1, area2, area_inter, iou);
+#endif
+
   return iou;
 }
 
@@ -476,10 +495,10 @@ __DEVICE__ void compute_roi_pool_pts(const T* roi, T* out_pts, const float spati
 template <typename T>
 __DEVICE__ inline bool is_same_rbox_aabox(
     const T rbox_pts[8],
-    const int min_x,
-    const int max_x,
-    const int min_y,
-    const int max_y
+    const T min_x,
+    const T max_x,
+    const T min_y,
+    const T max_y,
     const double elapsed = 1e-5)
 {
 #pragma unroll
@@ -497,8 +516,8 @@ template <typename T>
 __DEVICE__ inline bool is_point_in_rbox(
     const T rbox_pts[8],
     const T rbox_line_params[8],
-    const int x,
-    const int y
+    const T x,
+    const T y
     )
 {
   // We do a sign test to see which side the point lies.
@@ -525,29 +544,35 @@ __DEVICE__ inline bool is_point_in_rbox(
   return (num_pos_sign == 4 || num_neg_sign == 4);
 }
 
-#if 0
 template <typename T>
-__DEVICE__ inline bool is_aabox_in_rbox(
-    const T rbox_pts[8],
-    const int min_x,
-    const int max_x,
-    const int min_y,
-    const int max_y
+__DEVICE__ inline bool is_point_in_aabox(
+    const T rbox_x,
+    const T rbox_y,
+    const T min_x,
+    const T max_x,
+    const T min_y,
+    const T max_y
     )
 {
+  if (rbox_x < min_x || rbox_x > max_x) {
+    return false;
+  }
+  if (rbox_y < min_y || rbox_y > max_y) {
+    return false;
+  }
+  return true;
 }
-#endif
 
 template <typename T>
 __DEVICE__ inline bool is_rbox_in_aabox(
     const T rbox_pts[8],
-    const int min_x,
-    const int max_x,
-    const int min_y,
-    const int max_y
+    const T min_x,
+    const T max_x,
+    const T min_y,
+    const T max_y
     )
 {
-#pragma unroll
+// #pragma unroll
   for (int i = 0; i < 4; i++) {
     if (rbox_pts[i*2] < min_x || rbox_pts[i*2] > max_x) {
       return false;
@@ -563,17 +588,34 @@ template <typename T>
 __DEVICE__ inline bool get_itersect_y_aabox(
     T& y,
     const T rbox_pts[8],
-    // const T rbox_line_params[8],
     const int rbox_pt_idx,
-    const int x
+    const T x,
+    const T min_y,
+    const T max_y
     )
 {
-  if (rbox_pts[rbox_pt_idx*2] == rbox_pts[(rbox_pt_idx+1)*2]) {
+  T start_x = rbox_pts[rbox_pt_idx*2 % 8];
+  T end_x = rbox_pts[(rbox_pt_idx+1)*2 % 8];
+  T start_y = rbox_pts[rbox_pt_idx*2 % 8 + 1];
+  T end_y = rbox_pts[(rbox_pt_idx+1)*2 % 8 + 1];
+
+  if (start_x == end_x) {
     return false;
   }
 
-  T slope = (rbox_pts[(rbox_pt_idx+1)*2 + 1] - rbox_pts[rbox_pt_idx*2 + 1]) / (rbox_pts[(rbox_pt_idx+1)*2] - rbox_pts[rbox_pt_idx*2]);
-  y = rbox_pts[rbox_pt_idx*2 + 1] + slope * (x - rbox_pts[rbox_pt_idx*2]);
+  if ((x - start_x)*(x - end_x) > 0) {
+    return false;
+  }
+
+  T slope = (end_y - start_y) / (end_x - start_x);
+  y = start_y + slope * (x - start_x);
+
+  if (y < min_y || y > max_y) {
+    return false;
+  }
+  if ((y - start_y)*(y - end_y) > 0) {
+    return false;
+  }
 
   return true;
 }
@@ -582,39 +624,81 @@ template <typename T>
 __DEVICE__ inline bool get_itersect_x_aabox(
     T& x,
     const T rbox_pts[8],
-    // const T rbox_line_params[8],
     const int rbox_pt_idx,
-    const int y
+    const T y,
+    const T min_x,
+    const T max_x
     )
 {
-  if (rbox_pts[rbox_pt_idx*2 + 1] == rbox_pts[(rbox_pt_idx+1)*2 + 1]) {
+  T start_x = rbox_pts[rbox_pt_idx*2 % 8];
+  T end_x = rbox_pts[(rbox_pt_idx+1)*2 % 8];
+  T start_y = rbox_pts[rbox_pt_idx*2 % 8 + 1];
+  T end_y = rbox_pts[(rbox_pt_idx+1)*2 % 8 + 1];
+
+  if (start_y == end_y) {
     return false;
   }
 
-  T rev_slope = (rbox_pts[(rbox_pt_idx+1)*2] - rbox_pts[rbox_pt_idx*2]) / (rbox_pts[(rbox_pt_idx+1)*2 + 1] - rbox_pts[rbox_pt_idx*2 + 1]);
-  x = rbox_pts[rbox_pt_idx*2] + rev_slope * (y - rbox_pts[rbox_pt_idx*2 + 1]);
+  if ((y - start_y)*(y - end_y) > 0) {
+    return false;
+  }
+
+  T rev_slope = (end_x - start_x) / (end_y - start_y);
+  x = start_x + rev_slope * (y - start_y);
+
+  if (x < min_x || x > max_x) {
+    return false;
+  }
+  if ((x - start_x)*(x - end_x) > 0) {
+    return false;
+  }
 
   return true;
+}
+
+template <typename T>
+__DEVICE__ inline T polygon_area(const int num_vertices, const T* vertices)
+{
+  if (num_vertices == 0) {
+    return T(0);
+  }
+
+  T area = T(0);
+
+  const T* prev = vertices + (num_vertices - 1) * 2;
+  for (int i = 0; i < num_vertices; i++) {
+    const T* curr = vertices + i * 2;
+    area += prev[0] * curr[1] - prev[1] * curr[0];
+    prev = curr;
+  }
+
+  area = fabs(area * 0.5);
+
+  return area;
 }
 
 template <typename T>
 __DEVICE__ T itersect_area_rbox_aabox(
     const T rbox_pts[8],
     const T rbox_area,
-    const int min_x,
-    const int max_x,
-    const int min_y,
-    const int max_y
+    const T min_x,
+    const T max_x,
+    const T min_y,
+    const T max_y
     )
 {
   T intersection_pts[MAX_RECT_INTERSECTIONS * 2];
   int num_intersect_pts = 0;
 
-  T area = T(0);
+  T area = 0;
 
   // rbox is the same as aabox
   if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
     area = (max_x - min_x) * (max_y - min_y);
+// #ifdef DEBUG
+//     printf("rbox is the same as aabox\n");
+// #endif
+    return area;
   }
 
   // line parameters for rbox
@@ -627,6 +711,7 @@ __DEVICE__ T itersect_area_rbox_aabox(
 
   // check whether corner point of aabox is inside the rbox
   // Manually unroll
+  int old_num_intersect_pts = num_intersect_pts;
   if (is_point_in_rbox(rbox_pts, line_params, min_x, min_y)) {
     intersection_pts[num_intersect_pts*2] = min_x;
     intersection_pts[num_intersect_pts*2+1] = min_y;
@@ -649,21 +734,101 @@ __DEVICE__ T itersect_area_rbox_aabox(
   }
 
   // aabox is totally inside rbox
-  if (num_intersect_pts == 4) {
+  if (num_intersect_pts - old_num_intersect_pts == 4) {
     area = (max_x - min_x) * (max_y - min_y);
+// #ifdef DEBUG
+//     printf("aabox is totally inside rbox: %f\n", area);
+// #endif
+    return area;
+  }
+
+  old_num_intersect_pts = num_intersect_pts;
+  for (int i = 0; i < 4; i++) {
+    if (is_point_in_aabox(rbox_pts[i*2], rbox_pts[i*2+1], min_x, max_x, min_y, max_y)) {
+      intersection_pts[num_intersect_pts*2] = rbox_pts[i*2];
+      intersection_pts[num_intersect_pts*2+1] = rbox_pts[i*2+1];
+      ++ num_intersect_pts;
+    }
   }
 
   // rbox is totally inside aabox
-  if (is_rbox_in_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
+  if (num_intersect_pts - old_num_intersect_pts == 4) {
+  // if (is_rbox_in_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
     area = rbox_area;
+// #ifdef DEBUG
+//     printf("rbox is totally inside aabox: %f %f\n", area, rbox_area);
+// #endif
+    return area;
   }
+
+#define DEBUG
+#ifdef DEBUG
+  printf("Before line test: num_intersect_pts: %d\n", num_intersect_pts);
+#endif
 
   // line test - test all line combos for intersection
-
-  // TODO
+  T x;
+  T y;
   for (int i = 0; i < 4; i++) {
+    if (get_itersect_y_aabox(y, rbox_pts, i, min_x, min_y, max_y)) {
+      intersection_pts[num_intersect_pts*2] = min_x;
+      intersection_pts[num_intersect_pts*2+1] = y;
+      ++ num_intersect_pts;
+    }
+
+    if (get_itersect_y_aabox(y, rbox_pts, i, max_x, min_y, max_y)) {
+      intersection_pts[num_intersect_pts*2] = max_x;
+      intersection_pts[num_intersect_pts*2+1] = y;
+      ++ num_intersect_pts;
+    }
+
+    if (get_itersect_x_aabox(x, rbox_pts, i, min_y, min_x, max_x)) {
+      intersection_pts[num_intersect_pts*2] = x;
+      intersection_pts[num_intersect_pts*2+1] = min_y;
+      ++ num_intersect_pts;
+    }
+
+    if (get_itersect_x_aabox(x, rbox_pts, i, max_y, min_x, max_x)) {
+      intersection_pts[num_intersect_pts*2] = x;
+      intersection_pts[num_intersect_pts*2+1] = max_y;
+      ++ num_intersect_pts;
+    }
   }
 
+#ifdef DEBUG
+  printf("After line test: num_intersect_pts: %d\n", num_intersect_pts);
+#endif
+
+#if 0
+  // TODO: filter_duplicate_intersections
+  const float elapsed = 0.00001f;
+  T out_intersection_pts[MAX_RECT_INTERSECTIONS * 2];
+  num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, out_intersection_pts, intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
+#endif
+
+  if (num_intersect_pts == 0) {
+  // if (num_intersect_pts < 3) {
+    area = 0;
+  } else {
+    // sort the points of intersection
+#if 1
+    sort_hull_pts(num_intersect_pts, intersection_pts);
+    // sort_hull_pts(num_intersect_pts, out_intersection_pts);
+
+    // area = polygon_area(num_intersect_pts, intersection_pts);
+
+    area = contourArea(num_intersect_pts, intersection_pts);
+    // area = contourArea(num_intersect_pts, out_intersection_pts);
+#endif
+
+#if 0
+    T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];
+    size_t npoints = convexHull(num_intersect_pts, out_intersection_pts, order_pts_f2);
+    area = contourArea(npoints, order_pts_f2);
+#endif
+  }
+
+  return area;
 }
 
 #endif /* ROTATE_RECT_OPS_H */
