@@ -284,8 +284,18 @@ __global__ void compute_weight(
       T output_val = 0.0;
       for (int hh = top; hh < bottom+1; ++hh) {
         for (int ww = left; ww < right+1; ++ww) {
-          T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
-          T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
+          // T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
+          // T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
+
+          T inter_area = itersect_area_rbox_aabox(
+              roi_pool_pts_shared + roi_pool_offset_shared,
+              rbox_area,
+              ww + 0.f,
+              ww + 1.f,
+              hh + 0.f,
+              hh + 1.f
+              );
+
           T px_weight = inter_area / rbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
@@ -391,8 +401,18 @@ __global__ void compute_weight_local(
       T output_val = 0.0;
       for (int hh = top; hh < bottom+1; ++hh) {
         for (int ww = left; ww < right+1; ++ww) {
-          T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
-          T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_local);
+          // T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
+          // T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_local);
+
+          T inter_area = itersect_area_rbox_aabox(
+              roi_pool_pts_local,
+              rbox_area,
+              ww + 0.f,
+              ww + 1.f,
+              hh + 0.f,
+              hh + 1.f
+              );
+
           T px_weight = inter_area / rbox_area;
           output_val += px_weight * bottom_data_offset[hh * width + ww];
         }
