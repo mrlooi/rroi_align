@@ -494,7 +494,9 @@ __DEVICE__ void compute_roi_pool_pts(const T* roi, T* out_pts, const float spati
 
 }
 
+////////////////////////////////////////////////////////////////////////////////
 // special cases for rotated box and axis-aligned box
+////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
 __DEVICE__ inline bool is_same_rbox_aabox(
@@ -780,7 +782,7 @@ __DEVICE__ T itersect_area_rbox_aabox(
   T area = 0;
 
   // rbox is the same as aabox
-  if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
+  if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y, 0.00001f)) {
     area = (max_x - min_x) * (max_y - min_y);
     return area;
   }

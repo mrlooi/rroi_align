@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cuda_runtime.h>
 #include <cstring>
+#include <cmath>
 
 #include "RROIAlign_cuda.h"
 #include "rroi_align.h"
@@ -126,6 +127,20 @@ int main()
 
   CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("output", top_data_h.get());
+
+  const float elapsed = 0.0001f;
+  bool is_correct = true;
+  for (auto i = 0; i < top_data_size; i++) {
+    if (fabs(top_data_golden_h[i] - top_data_h[i]) > elapsed) {
+      is_correct = false;
+      std::cout << "FAILED: " << i << " output: " << top_data_h[i] << " golden: " << top_data_golden_h[i] << std::endl;
+      break;
+    }
+  }
+
+  if (is_correct) {
+    std::cout << "PASSED!" << std::endl;
+  }
 
   return 0;
 }
