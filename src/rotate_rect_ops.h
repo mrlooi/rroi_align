@@ -616,10 +616,18 @@ __DEVICE__ inline bool get_itersect_y_aabox(
   T slope = (end_y - start_y) / (end_x - start_x);
   y = start_y + slope * (x - start_x);
 
-  if (y < min_y || y > max_y) {
+  // NOTE: discard the line intersection point
+  // if it's the same as one of the vertex of one rectangle
+  if (y <= min_y || y >= max_y) {
     return false;
   }
   if ((y - start_y)*(y - end_y) > 0) {
+    return false;
+  }
+  if (x == start_x && y == start_y) {
+    return false;
+  }
+  if (x == end_x && y == end_y) {
     return false;
   }
 
@@ -652,10 +660,18 @@ __DEVICE__ inline bool get_itersect_x_aabox(
   T rev_slope = (end_x - start_x) / (end_y - start_y);
   x = start_x + rev_slope * (y - start_y);
 
-  if (x < min_x || x > max_x) {
+  // NOTE: discard the line intersection point
+  // if it's the same as one of the vertex of one rectangle
+  if (x <= min_x || x >= max_x) {
     return false;
   }
   if ((x - start_x)*(x - end_x) > 0) {
+    return false;
+  }
+  if (x == start_x && y == start_y) {
+    return false;
+  }
+  if (x == end_x && y == end_y) {
     return false;
   }
 
@@ -885,7 +901,7 @@ __DEVICE__ T itersect_area_rbox_aabox(
 #endif
 
 #if 0
-  // TODO: filter_duplicate_intersections
+  // NOTE: don't have to filter duplicate intersections again
   const float elapsed = 0.00001f;
   T out_intersection_pts[MAX_RECT_INTERSECTIONS * 2];
   num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, intersection_pts, out_intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
