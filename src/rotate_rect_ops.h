@@ -354,6 +354,10 @@ __DEVICE__ int rotatedRectangleIntersection( const T* rect_pts1, const T* rect_p
     num_intersects = filter_duplicate_intersections(out_num_intersects, intersectingRegion2, intersectingRegion, samePointEps, MAX_RECT_INTERSECTIONS);
     out_num_intersects = num_intersects;
 
+#ifdef DEBUG
+    printf("filter_duplicate_intersections: %d\n", num_intersects);
+#endif
+
     if( num_intersects == 0 )
     {
         ret = RectIntersectTypes::INTERSECT_NONE;
@@ -389,9 +393,6 @@ __DEVICE__ float computeRectInterArea(const T* rect_pts1, const T* rect_pts2)
         T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];
         size_t npoints = convexHull(num_intersects, inter_pts_f, order_pts_f2);
         interArea = contourArea(npoints, order_pts_f2);
-
-        // sort_hull_pts(num_intersects, inter_pts_f);
-        // interArea = contourArea(num_intersects, inter_pts_f);
     }
 
     return interArea;
@@ -575,7 +576,7 @@ __DEVICE__ inline bool is_rbox_in_aabox(
     const T max_y
     )
 {
-// #pragma unroll
+#pragma unroll
   for (int i = 0; i < 4; i++) {
     if (rbox_pts[i*2] < min_x || rbox_pts[i*2] > max_x) {
       return false;
@@ -680,6 +681,89 @@ __DEVICE__ inline T polygon_area(const int num_vertices, const T* vertices)
   return area;
 }
 
+// Refer to: https://stackoverflow.com/questions/6989100/sort-points-in-clockwise-order
+template <typename T>
+__DEVICE__ inline bool anti_clockwise_less_than(
+    const T lhs_x,
+    const T lhs_y,
+    const T rhs_x,
+    const T rhs_y,
+    const T center_x,
+    const T center_y
+    )
+{
+  if (lhs_x - center_x >= 0 && rhs_x - center_x < 0) {
+    return false;
+  }
+
+  if (lhs_x - center_x < 0 && rhs_x - center_x >= 0) {
+    return true;
+  }
+
+  if (lhs_x - center_x == 0 && rhs_x - center_x == 0) {
+    if (lhs_y - center_y >= 0 || rhs_y - center_y >= 0) {
+      return lhs_y <= rhs_y;
+    }
+    return rhs_y <= lhs_y;
+  }
+
+  // compute the cross product of vectors: (center -> lhs) x (center -> rhs)
+  T det = (lhs_x - center_x) * (rhs_y - center_y) - (rhs_x - center_x) * (lhs_y - center_y);
+  if (det < 0) {
+    return false;
+  }
+  if (det > 0) {
+    return true;
+  }
+
+  // points lhs and rhs are on the same line from the center
+  // check which point is closer to the center
+  T lhs_d = (lhs_x - center_x) * (lhs_x - center_x) + (lhs_y - center_y) * (lhs_y - center_y);
+  T rhs_d = (rhs_x - center_x) * (rhs_x - center_x) + (rhs_y - center_y) * (lhs_y - center_y);
+  return lhs_d <= rhs_d;
+}
+
+template <typename T>
+__DEVICE__ inline void get_center_point(
+    T& center_x,
+    T& center_y,
+    const int num_pts,
+    T* pts
+    )
+{
+  center_x = T(0);
+  center_y = T(0);
+  for (int i = 0; i < num_pts; ++i) {
+    center_x += pts[i*2];
+    center_y += pts[i*2+1];
+  }
+  center_x /= num_pts;
+  center_y /= num_pts;
+}
+
+template <typename T>
+__DEVICE__ inline void anti_clockwise_sort(const int num_pts, T* pts)
+{
+  T center_x;
+  T center_y;
+  get_center_point(center_x, center_y, num_pts, pts);
+
+  for (int i = 0; i < num_pts; ++i) {
+    for (int j = 0; j < num_pts; ++j) {
+      T lhs_x = pts[i*2];
+      T lhs_y = pts[i*2+1];
+      T rhs_x = pts[j*2];
+      T rhs_y = pts[j*2+1];
+      if (anti_clockwise_less_than(lhs_x, lhs_y, rhs_x, rhs_y, center_x, center_y)) {
+        pts[i*2] = rhs_x;
+        pts[i*2+1] = rhs_y;
+        pts[j*2] = lhs_x;
+        pts[j*2+1] = lhs_y;
+      }
+    }
+  }
+}
+
 template <typename T>
 __DEVICE__ T itersect_area_rbox_aabox(
     const T rbox_pts[8],
@@ -736,9 +820,9 @@ __DEVICE__ T itersect_area_rbox_aabox(
   // aabox is totally inside rbox
   if (num_intersect_pts - old_num_intersect_pts == 4) {
     area = (max_x - min_x) * (max_y - min_y);
-// #ifdef DEBUG
-//     printf("aabox is totally inside rbox: %f\n", area);
-// #endif
+#ifdef DEBUG
+    printf("aabox is totally inside rbox: %f\n", area);
+#endif
     return area;
   }
 
@@ -753,11 +837,11 @@ __DEVICE__ T itersect_area_rbox_aabox(
 
   // rbox is totally inside aabox
   if (num_intersect_pts - old_num_intersect_pts == 4) {
-  // if (is_rbox_in_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
+// if (is_rbox_in_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
     area = rbox_area;
-// #ifdef DEBUG
-//     printf("rbox is totally inside aabox: %f %f\n", area, rbox_area);
-// #endif
+#ifdef DEBUG
+    printf("rbox is totally inside aabox: %f %f\n", area, rbox_area);
+#endif
     return area;
   }
 
@@ -805,26 +889,17 @@ __DEVICE__ T itersect_area_rbox_aabox(
   num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, intersection_pts, out_intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
 #endif
 
-  if (num_intersect_pts == 0) {
-  // if (num_intersect_pts < 3) {
+  // if (num_intersect_pts == 0) {
+  if (num_intersect_pts < 3) {
     area = 0;
   } else {
     // sort the points of intersection
-#if 0
-    sort_hull_pts(num_intersect_pts, intersection_pts);
-    // sort_hull_pts(num_intersect_pts, out_intersection_pts);
-
-    area = polygon_area(num_intersect_pts, intersection_pts);
-
-    // area = contourArea(num_intersect_pts, intersection_pts);
-    // area = contourArea(num_intersect_pts, out_intersection_pts);
-#endif
-
 #if 1
-    T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];
-    size_t npoints = convexHull(num_intersect_pts, intersection_pts, order_pts_f2);
-    // size_t npoints = convexHull(num_intersect_pts, out_intersection_pts, order_pts_f2);
-    area = contourArea(npoints, order_pts_f2);
+    anti_clockwise_sort(num_intersect_pts, intersection_pts);
+    area = polygon_area(num_intersect_pts, intersection_pts);
+#else
+    anti_clockwise_sort(num_intersect_pts, out_intersection_pts);
+    area = polygon_area(num_intersect_pts, out_intersection_pts);
 #endif
   }
 
