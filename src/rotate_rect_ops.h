@@ -386,9 +386,12 @@ __DEVICE__ float computeRectInterArea(const T* rect_pts1, const T* rect_pts2)
     {
         interArea = contourArea(4, rect_pts2);
     } else {
-        T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];                
+        T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];
         size_t npoints = convexHull(num_intersects, inter_pts_f, order_pts_f2);
         interArea = contourArea(npoints, order_pts_f2);
+
+        // sort_hull_pts(num_intersects, inter_pts_f);
+        // interArea = contourArea(num_intersects, inter_pts_f);
     }
 
     return interArea;
@@ -594,9 +597,9 @@ __DEVICE__ inline bool get_itersect_y_aabox(
     const T max_y
     )
 {
-  T start_x = rbox_pts[rbox_pt_idx*2 % 8];
+  T start_x = rbox_pts[rbox_pt_idx*2];
   T end_x = rbox_pts[(rbox_pt_idx+1)*2 % 8];
-  T start_y = rbox_pts[rbox_pt_idx*2 % 8 + 1];
+  T start_y = rbox_pts[rbox_pt_idx*2 + 1];
   T end_y = rbox_pts[(rbox_pt_idx+1)*2 % 8 + 1];
 
   if (start_x == end_x) {
@@ -630,9 +633,9 @@ __DEVICE__ inline bool get_itersect_x_aabox(
     const T max_x
     )
 {
-  T start_x = rbox_pts[rbox_pt_idx*2 % 8];
+  T start_x = rbox_pts[rbox_pt_idx*2];
   T end_x = rbox_pts[(rbox_pt_idx+1)*2 % 8];
-  T start_y = rbox_pts[rbox_pt_idx*2 % 8 + 1];
+  T start_y = rbox_pts[rbox_pt_idx*2 + 1];
   T end_y = rbox_pts[(rbox_pt_idx+1)*2 % 8 + 1];
 
   if (start_y == end_y) {
@@ -695,9 +698,6 @@ __DEVICE__ T itersect_area_rbox_aabox(
   // rbox is the same as aabox
   if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
     area = (max_x - min_x) * (max_y - min_y);
-// #ifdef DEBUG
-//     printf("rbox is the same as aabox\n");
-// #endif
     return area;
   }
 
@@ -761,7 +761,6 @@ __DEVICE__ T itersect_area_rbox_aabox(
     return area;
   }
 
-#define DEBUG
 #ifdef DEBUG
   printf("Before line test: num_intersect_pts: %d\n", num_intersect_pts);
 #endif
@@ -803,7 +802,7 @@ __DEVICE__ T itersect_area_rbox_aabox(
   // TODO: filter_duplicate_intersections
   const float elapsed = 0.00001f;
   T out_intersection_pts[MAX_RECT_INTERSECTIONS * 2];
-  num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, out_intersection_pts, intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
+  num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, intersection_pts, out_intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
 #endif
 
   if (num_intersect_pts == 0) {
@@ -811,19 +810,20 @@ __DEVICE__ T itersect_area_rbox_aabox(
     area = 0;
   } else {
     // sort the points of intersection
-#if 1
+#if 0
     sort_hull_pts(num_intersect_pts, intersection_pts);
     // sort_hull_pts(num_intersect_pts, out_intersection_pts);
 
-    // area = polygon_area(num_intersect_pts, intersection_pts);
+    area = polygon_area(num_intersect_pts, intersection_pts);
 
-    area = contourArea(num_intersect_pts, intersection_pts);
+    // area = contourArea(num_intersect_pts, intersection_pts);
     // area = contourArea(num_intersect_pts, out_intersection_pts);
 #endif
 
-#if 0
+#if 1
     T order_pts_f2[MAX_RECT_INTERSECTIONS * 2];
-    size_t npoints = convexHull(num_intersect_pts, out_intersection_pts, order_pts_f2);
+    size_t npoints = convexHull(num_intersect_pts, intersection_pts, order_pts_f2);
+    // size_t npoints = convexHull(num_intersect_pts, out_intersection_pts, order_pts_f2);
     area = contourArea(npoints, order_pts_f2);
 #endif
   }
