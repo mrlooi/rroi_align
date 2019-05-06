@@ -519,6 +519,23 @@ __DEVICE__ inline bool is_same_rbox_aabox(
 }
 
 template <typename T>
+__DEVICE__ inline bool is_duplicate_pt(
+    const T lhs_x,
+    const T lhs_y,
+    const T rhs_x,
+    const T rhs_y,
+    const double elapsed = 1e-5
+    )
+{
+  double d = (lhs_x - rhs_x) * (lhs_x - rhs_x) + (lhs_y - rhs_y) * (lhs_y - rhs_y);
+  if (d < elapsed * elapsed) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+template <typename T>
 __DEVICE__ inline bool is_point_in_rbox(
     const T rbox_pts[8],
     const T rbox_line_params[8],
@@ -616,18 +633,19 @@ __DEVICE__ inline bool get_itersect_y_aabox(
   T slope = (end_y - start_y) / (end_x - start_x);
   y = start_y + slope * (x - start_x);
 
-  // NOTE: discard the line intersection point
-  // if it's the same as one of the vertex of one rectangle
   if (y <= min_y || y >= max_y) {
     return false;
   }
   if ((y - start_y)*(y - end_y) > 0) {
     return false;
   }
-  if (x == start_x && y == start_y) {
+
+  // NOTE: discard the line intersection point
+  // if it's the same as one of the vertex of one rectangle
+  if (is_duplicate_pt(x, y, x, min_y) || is_duplicate_pt(x, y, x, max_y)) {
     return false;
   }
-  if (x == end_x && y == end_y) {
+  if (is_duplicate_pt(x, y, start_x, start_y) || is_duplicate_pt(x, y, end_x, end_y)) {
     return false;
   }
 
@@ -660,18 +678,19 @@ __DEVICE__ inline bool get_itersect_x_aabox(
   T rev_slope = (end_x - start_x) / (end_y - start_y);
   x = start_x + rev_slope * (y - start_y);
 
-  // NOTE: discard the line intersection point
-  // if it's the same as one of the vertex of one rectangle
   if (x <= min_x || x >= max_x) {
     return false;
   }
   if ((x - start_x)*(x - end_x) > 0) {
     return false;
   }
-  if (x == start_x && y == start_y) {
+
+  // NOTE: discard the line intersection point
+  // if it's the same as one of the vertex of one rectangle
+  if (is_duplicate_pt(x, y, min_x, y) || is_duplicate_pt(x, y, max_x, y)) {
     return false;
   }
-  if (x == end_x && y == end_y) {
+  if (is_duplicate_pt(x, y, start_x, start_y) || is_duplicate_pt(x, y, end_x, end_y)) {
     return false;
   }
 
@@ -798,7 +817,7 @@ __DEVICE__ T itersect_area_rbox_aabox(
   T area = 0;
 
   // rbox is the same as aabox
-  if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y, 0.00001f)) {
+  if (is_same_rbox_aabox(rbox_pts, min_x, max_x, min_y, max_y)) {
     area = (max_x - min_x) * (max_y - min_y);
     return area;
   }
@@ -907,9 +926,8 @@ __DEVICE__ T itersect_area_rbox_aabox(
   num_intersect_pts = filter_duplicate_intersections(num_intersect_pts, intersection_pts, out_intersection_pts, elapsed, MAX_RECT_INTERSECTIONS);
 #endif
 
-  // if (num_intersect_pts == 0) {
   if (num_intersect_pts < 3) {
-    area = 0;
+    area = T(0);
   } else {
     // sort the points of intersection
 #if 1
