@@ -203,7 +203,7 @@ int main()
       );
   CUDA_CHECK(cudaDeviceSynchronize());
   timer.stop();
-  std::cout << "RROIPool_forward_golden: " << timer.elapsed() << std::endl;
+  std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("pool", top_pool_data_h.get());
