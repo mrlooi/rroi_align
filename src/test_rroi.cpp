@@ -12,6 +12,23 @@
 #include "cuda_timer.h"
 #include "cuda_utils.h"
 
+
+void test_correctness(float* golden_data, float* output_data, int data_size, const float elapsed = 0.0001f)
+{
+  bool is_correct = true;
+  for (auto i = 0; i < data_size; i++) {
+    if (fabs(golden_data[i] - output_data[i]) > elapsed) {
+      is_correct = false;
+      std::cout << "FAILED: " << i << " output: " << output_data[i] << " golden: " << golden_data[i] << std::endl;
+      break;
+    }
+  }
+
+  if (is_correct) {
+    std::cout << "PASSED!" << std::endl;
+  }
+}
+
 int main()
 {
   std::string in_filename = "testcase";
@@ -131,21 +148,12 @@ int main()
   CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("output", top_data_h.get());
 
-  const float elapsed = 0.0001f;
-  bool is_correct = true;
-  for (auto i = 0; i < top_data_size; i++) {
-    if (fabs(top_data_golden_h[i] - top_data_h[i]) > elapsed) {
-      is_correct = false;
-      std::cout << "FAILED: " << i << " output: " << top_data_h[i] << " golden: " << top_data_golden_h[i] << std::endl;
-      break;
-    }
-  }
+  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
 
-  if (is_correct) {
-    std::cout << "PASSED!" << std::endl;
-  }
-
+  ////////////////////////////////////////////////////////////////////////////////
   // RROI pooling
+  ////////////////////////////////////////////////////////////////////////////////
+
   unique_ptr_host<float> top_pool_data_golden_h(nullptr);
   unique_ptr_device<float> top_pool_data_golden_d(nullptr);
   unique_ptr_host<float> top_pool_data_h(nullptr);
@@ -199,6 +207,8 @@ int main()
 
   CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
   write_output("pool", top_pool_data_h.get());
+
+  test_correctness(top_pool_data_golden_h.get(), top_pool_data_h.get(), top_data_size, 1e-10);
 
   return 0;
 }
