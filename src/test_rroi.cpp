@@ -6,6 +6,8 @@
 
 #include "RROIAlign_cuda.h"
 #include "rroi_align.h"
+#include "RROIPool_cuda.h"
+
 #include "cuda_timer.h"
 #include "cuda_utils.h"
 
@@ -141,6 +143,35 @@ int main()
   if (is_correct) {
     std::cout << "PASSED!" << std::endl;
   }
+
+  // RROI pooling
+  unique_ptr_host<float> top_pool_data_h(nullptr);
+  unique_ptr_device<float> top_pool_data_d(nullptr);
+  CUDA_CHECK(cudaMallocHost((void **) &top_pool_data_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_pool_data_d, top_data_size * sizeof(float)));
+
+  // Use golden function
+  timer.start();
+  RROIPool_forward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d.get(),
+      rois_d.get(),
+      top_pool_data_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
+  write_output("pool-golden", top_pool_data_h.get());
 
   return 0;
 }
