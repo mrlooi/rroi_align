@@ -1,8 +1,9 @@
-#pragma once
+#ifndef RROI_POOL_H
+#define RROI_POOL_H
 
 #include <cuda_runtime.h>
 
-void RROIPool_forward_golden(
+void RROIPool_forward(
     int batch_size,
     int num_rois,
     int channels,
@@ -17,3 +18,4 @@ void RROIPool_forward_golden(
     cudaStream_t stream = 0
     );
 
+#endif /* RROI_POOL_H */
