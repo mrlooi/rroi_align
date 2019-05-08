@@ -19,8 +19,8 @@ set(CUDA_NVCC_FLAGS_RELEASE "${CUDA_NVCC_FLAGS_RELEASE};-O3;-DNDEBUG;--use_fast_
 # own include dirs
 include_directories("include")
 
-add_executable(gen_testcases src/gen_testcases.cpp)
+add_executable(gen_testcases test/gen_testcases.cpp)
 # target_link_libraries(gen_testcases)
 
-cuda_add_executable(test_rroi src/RROIAlign_cuda.cu src/rroi_align.cu src/RROIPool_cuda.cu src/rroi_pool.cu src/test_rroi.cpp)
+cuda_add_executable(test_rroi src/RROIAlign_cuda.cu src/rroi_align.cu src/RROIPool_cuda.cu src/rroi_pool.cu test/test_rroi.cpp)
 target_link_libraries(test_rroi ${CUDA_LIBRARIES})
