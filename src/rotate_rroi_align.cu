@@ -4,7 +4,7 @@
 //#include <cstdio>
 #include <cuda.h>
 
-#include "rotate_rroi_align.h"
+#include "rroi.h"
 #include "rotate_rect_ops.h"
 
 // TODO make it in a common file

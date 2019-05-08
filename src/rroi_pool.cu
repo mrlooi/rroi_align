@@ -1,4 +1,4 @@
-#include "rroi_pool.h"
+#include "rroi.h"
 
 #include <cuda.h>
 

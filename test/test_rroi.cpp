@@ -4,14 +4,10 @@
 #include <cstring>
 #include <cmath>
 
-#include "RROIAlign_cuda.h"
-#include "rroi_align.h"
-#include "RROIPool_cuda.h"
-#include "rroi_pool.h"
-
 #include "cuda_timer.h"
 #include "cuda_utils.h"
 
+#include "rroi.h"
 
 void test_correctness(float* golden_data, float* output_data, int data_size, const float elapsed = 0.0001f)
 {

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cuda.h>
 
-#include "RROIPool_cuda.h"
+#include "rroi.h"
 #include "rotate_rect_ops.h"
 
 // TODO make it in a common file
