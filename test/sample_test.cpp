@@ -113,5 +113,57 @@ int main()
         std::cout << top_data_h[i] << std::endl;
     }
 
+    // BACKWARD PASS
+    std::vector<float> top_diff(top_data_size, 1);
+
+    unique_ptr_device<float> top_diff_d(nullptr);
+    CUDA_CHECK(cudaMalloc((void **) &top_diff_d, top_data_size * sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(top_diff_d.get(), &top_diff[0], top_data_size * sizeof(float), cudaMemcpyHostToDevice));
+    // CUDA_CHECK(cudaMemset(top_diff_d.get(), 1, top_data_size * sizeof(float)));  // set all to ones
+
+    unique_ptr_device<float> bottom_diff_d(nullptr);
+    CUDA_CHECK(cudaMalloc((void **) &bottom_diff_d, bottom_data_size * sizeof(float)));
+    CUDA_CHECK(cudaMemset(bottom_diff_d.get(), 0, bottom_data_size * sizeof(float)));  
+
+    // run backward kernel
+    timer.start();
+    vincent_rroi_align_backward(
+        batch_size,
+        num_rois,
+        channels,
+        height,
+        width,
+        pooled_height,
+        pooled_width,
+        spatial_scale,
+        top_diff_d.get(),
+        rois_d.get(),
+        bottom_diff_d.get(),
+        0
+    );
+    CUDA_CHECK(cudaDeviceSynchronize());
+    timer.stop();
+    std::cout << "vincent_rroi_align: " << timer.elapsed() << std::endl;
+
+    std::vector<float> bottom_diff(bottom_data_size);
+    CUDA_CHECK(cudaMemcpy(&bottom_diff[0], bottom_diff_d.get(), bottom_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    int ix = 0;
+    for (int b = 0; b < batch_size; ++b)
+    {
+        for (int c = 0; c < channels; ++c)
+        {
+            for (int h = 0; h < height; ++h)
+            {
+                for (int w = 0; w < width; ++w)
+                {
+                    printf("%.2f, ", bottom_diff[ix++]); 
+                }
+                printf("\n");
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
     return 0;
 }
