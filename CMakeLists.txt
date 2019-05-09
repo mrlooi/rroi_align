@@ -22,5 +22,9 @@ include_directories("include")
 add_executable(gen_testcases test/gen_testcases.cpp)
 # target_link_libraries(gen_testcases)
 
-cuda_add_executable(test_rroi src/RROIAlign_cuda.cu src/rroi_align.cu src/RROIPool_cuda.cu src/rroi_pool.cu test/test_rroi.cpp)
+cuda_add_executable(test_rroi
+  src/RROIAlign_cuda.cu src/rroi_align.cu
+  src/RROIPool_cuda.cu src/rroi_pool.cu
+  src/vincent_rroi_align.cu
+  test/test_rroi.cpp)
 target_link_libraries(test_rroi ${CUDA_LIBRARIES})
