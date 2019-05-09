@@ -6,12 +6,7 @@
 
 #include "rroi.h"
 #include "rotate_rect_ops.h"
-
-// TODO make it in a common file
-#define CUDA_1D_KERNEL_LOOP(i, n)                            \
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; \
-       i += blockDim.x * gridDim.x)
-
+#include "cuda_utils.h"
 
 //Definite equinox
 template <typename Dtype>
