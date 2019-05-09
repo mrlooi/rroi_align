@@ -57,7 +57,7 @@ int main()
   for (auto i = 0; i < bottom_data_size; i++) {
     fin >> bottom_data_h[i];
   }
-  CUDA_CHECK(cudaMemcpy(bottom_data_d.get(), bottom_data_h.get(), bottom_data_size, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(bottom_data_d.get(), bottom_data_h.get(), bottom_data_size * sizeof(float), cudaMemcpyHostToDevice));
 
   unique_ptr_host<float> rois_h(nullptr);
   unique_ptr_device<float> rois_d(nullptr);
@@ -69,7 +69,7 @@ int main()
   for (auto i = 0; i < num_rois * 6; i++) {
     fin >> rois_h[i];
   }
-  CUDA_CHECK(cudaMemcpy(rois_d.get(), rois_h.get(), rois_size, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(rois_d.get(), rois_h.get(), rois_size * sizeof(float), cudaMemcpyHostToDevice));
 
   fin.close();
 
@@ -114,7 +114,7 @@ int main()
   timer.stop();
   std::cout << "RROIAlign_forward_golden: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
   write_output("golden", top_data_golden_h.get());
 
   // CUDA_CHECK(cudaMemset(top_data_d.get(), 0, top_data_size));
@@ -141,7 +141,7 @@ int main()
   timer.stop();
   std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
   write_output("output", top_data_h.get());
 
   test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
@@ -179,7 +179,7 @@ int main()
   timer.stop();
   std::cout << "RROIPool_forward_golden: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_pool_data_golden_h.get(), top_pool_data_golden_d.get(), top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_pool_data_golden_h.get(), top_pool_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
   write_output("pool-golden", top_pool_data_golden_h.get());
 
   timer.start();
@@ -201,7 +201,7 @@ int main()
   timer.stop();
   std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
   write_output("pool", top_pool_data_h.get());
 
   test_correctness(top_pool_data_golden_h.get(), top_pool_data_h.get(), top_data_size, 1e-10);
