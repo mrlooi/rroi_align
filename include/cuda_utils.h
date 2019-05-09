@@ -5,6 +5,12 @@
 #include <cstdio>
 #include <memory>
 
+
+#define CUDA_1D_KERNEL_LOOP(i, n)                            \
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; \
+       i += blockDim.x * gridDim.x)
+
+
 #define CUDA_CHECK(call) { \
   cudaError_t err; \
   if ((err = (call)) != cudaSuccess) { \
