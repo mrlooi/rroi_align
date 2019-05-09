@@ -26,7 +26,7 @@ __global__ void compute_weight(
 
   const int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
 
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_rois * pooled_height * pooled_width; i += blockDim.x * gridDim.x) {
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < roi_pool_pt_num; i += blockDim.x * gridDim.x) {
     int c = blockIdx.y * blockDim.y + threadIdx.y;
     if (c < channels) {
       int pw = i % pooled_width;
@@ -38,32 +38,24 @@ __global__ void compute_weight(
       T rbox_area = get_rotated_bounding_box_area(spatial_scale, rois_offset[4], rois_offset[3], pooled_height, pooled_width);
 
       int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
-      // int roi_pool_idx_shared = threadIdx.x * threadIdx.y / (pooled_width * pooled_height * channels);
-      // int roi_pool_idx_shared = threadIdx.x;
-      // int roi_pool_offset_shared = 8 * roi_pool_idx_shared;
-      int roi_pool_offset_shared = 0;
-      // if (threadIdx.x == 0) {
-      //   for (int k = 0; k < 8; k++) {
-      //     roi_pool_pts_shared[pooled_height*pooled_width*roi_pool_idx_shared + k] = roi_pool_pts[k * roi_pool_pt_num + roi_pool_idx];
-      //   }
-      // }
-      if (threadIdx.x == 0 && c < 8) {
-        roi_pool_pts_shared[roi_pool_offset_shared + c] = roi_pool_pts[c * roi_pool_pt_num + roi_pool_idx];
+      int roi_pool_idx_shared = threadIdx.y;
+      if (roi_pool_idx_shared < 8) {
+        roi_pool_pts_shared[roi_pool_idx_shared] = roi_pool_pts[roi_pool_idx_shared * roi_pool_pt_num + roi_pool_idx];
       }
       __syncthreads();
 
       int left, top, right, bottom;
-      get_rotated_bounding_box(left, top, right, bottom, roi_pool_pts_shared + roi_pool_offset_shared, width, height);
+      get_rotated_bounding_box(left, top, right, bottom, roi_pool_pts_shared, width, height);
 
       const T* bottom_data_offset = bottom_data + (roi_batch_ind * channels + c) * height * width;
       T output_val = 0.0;
       for (int hh = top; hh < bottom+1; ++hh) {
         for (int ww = left; ww < right+1; ++ww) {
           // T pixel_rect_vertices[8] = {ww+0.0f, hh+0.0f, ww+1.0f, hh+0.0f, ww+1.0f, hh+1.0f, ww+0.0f, hh+1.0f};
-          // T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared + roi_pool_offset_shared);
+          // T inter_area = computeRectInterArea(pixel_rect_vertices, roi_pool_pts_shared);
 
           T inter_area = itersect_area_rbox_aabox(
-              roi_pool_pts_shared + roi_pool_offset_shared,
+              roi_pool_pts_shared,
               rbox_area,
               ww + 0.f,
               ww + 1.f,
@@ -151,7 +143,7 @@ __global__ void compute_weight_local(
 {
   const int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
 
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < num_rois * pooled_height * pooled_width; i += blockDim.x * gridDim.x) {
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < roi_pool_pt_num; i += blockDim.x * gridDim.x) {
     int c = blockIdx.y * blockDim.y + threadIdx.y;
     if (c < channels) {
       int pw = i % pooled_width;
