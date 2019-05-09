@@ -25,6 +25,249 @@ void test_correctness(float* golden_data, float* output_data, int data_size, con
   }
 }
 
+void write_output(const std::string& filename, const float* top_data_h, const int top_data_size, const int channels, const int pooled_height, const int pooled_width)
+{
+  std::fstream fout(filename, std::ios::out);
+  for (auto i = 0; i < top_data_size; i++) {
+    fout << top_data_h[i] << " ";
+    if ((i+1) % (pooled_width * pooled_height) == 0) {
+      fout << std::endl;
+    }
+  }
+}
+
+void test_RROIAlign_forward(
+  int batch_size,
+  int num_rois,
+  int channels,
+  int height,
+  int width,
+  int pooled_height,
+  int pooled_width,
+  float spatial_scale,
+  float* bottom_data_d,
+  float* rois_d
+    )
+{
+  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
+
+  unique_ptr_host<float> top_data_golden_h(nullptr);
+  unique_ptr_device<float> top_data_golden_d(nullptr);
+  unique_ptr_host<float> top_data_h(nullptr);
+  unique_ptr_device<float> top_data_d(nullptr);
+  CUDA_CHECK(cudaMallocHost((void **) &top_data_golden_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_data_golden_d, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &top_data_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_data_d, top_data_size * sizeof(float)));
+
+  CUDATimer timer;
+
+  // Use golden function
+  timer.start();
+  RROIAlign_forward_golden(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_data_golden_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIAlign_forward_golden: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("golden", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+  // CUDA_CHECK(cudaMemset(top_data_d.get(), 0, top_data_size));
+  // std::memset(top_data_h.get(), 0, top_data_size);
+  // CUDA_CHECK(cudaDeviceSynchronize());
+
+  // Test RROIAlign_forward
+  timer.start();
+  RROIAlign_forward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_data_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
+}
+
+void test_RROIPool_forward(
+  int batch_size,
+  int num_rois,
+  int channels,
+  int height,
+  int width,
+  int pooled_height,
+  int pooled_width,
+  float spatial_scale,
+  float* bottom_data_d,
+  float* rois_d
+  )
+{
+  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
+
+  unique_ptr_host<float> top_pool_data_golden_h(nullptr);
+  unique_ptr_device<float> top_pool_data_golden_d(nullptr);
+  unique_ptr_host<float> top_pool_data_h(nullptr);
+  unique_ptr_device<float> top_pool_data_d(nullptr);
+
+  CUDA_CHECK(cudaMallocHost((void **) &top_pool_data_golden_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_pool_data_golden_d, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &top_pool_data_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_pool_data_d, top_data_size * sizeof(float)));
+
+  CUDATimer timer;
+
+  // Use golden function
+  timer.start();
+  RROIPool_forward_golden(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_pool_data_golden_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIPool_forward_golden: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_pool_data_golden_h.get(), top_pool_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("pool-golden", top_pool_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+  timer.start();
+  RROIPool_forward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_pool_data_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("pool", top_pool_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+  test_correctness(top_pool_data_golden_h.get(), top_pool_data_h.get(), top_data_size, 1e-10);
+}
+
+// binlinear interpolation version of RROI align
+void test_bp_rroi_align(
+  int batch_size,
+  int num_rois,
+  int channels,
+  int height,
+  int width,
+  int pooled_height,
+  int pooled_width,
+  float spatial_scale,
+  float* bottom_data_d,
+  float* rois_d
+  )
+{
+  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
+
+  unique_ptr_host<float> top_data_golden_h(nullptr);
+  unique_ptr_device<float> top_data_golden_d(nullptr);
+  unique_ptr_host<float> top_data_h(nullptr);
+  unique_ptr_device<float> top_data_d(nullptr);
+  CUDA_CHECK(cudaMallocHost((void **) &top_data_golden_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_data_golden_d, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &top_data_h, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &top_data_d, top_data_size * sizeof(float)));
+
+  CUDATimer timer;
+
+  // Use golden function
+  timer.start();
+  vincent_rroi_align(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_data_golden_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "vincent_rroi_align: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("vincent_rroi_align", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+#if 0
+  // Test RROIAlign_forward
+  timer.start();
+  RROIAlign_forward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      bottom_data_d,
+      rois_d,
+      top_data_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+
+  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
+#endif
+}
+
 int main()
 {
   std::string in_filename = "testcase";
@@ -73,30 +316,7 @@ int main()
 
   fin.close();
 
-  unique_ptr_host<float> top_data_golden_h(nullptr);
-  unique_ptr_device<float> top_data_golden_d(nullptr);
-  unique_ptr_host<float> top_data_h(nullptr);
-  unique_ptr_device<float> top_data_d(nullptr);
-  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
-  CUDA_CHECK(cudaMallocHost((void **) &top_data_golden_h, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc((void **) &top_data_golden_d, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMallocHost((void **) &top_data_h, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc((void **) &top_data_d, top_data_size * sizeof(float)));
-
-  CUDATimer timer;
-  auto write_output = [channels, pooled_height, pooled_width, top_data_size](const std::string& filename, const float* top_data_h) {
-    std::fstream fout(filename, std::ios::out);
-    for (auto i = 0; i < top_data_size; i++) {
-      fout << top_data_h[i] << " ";
-      if ((i+1) % (pooled_width * pooled_height) == 0) {
-        fout << std::endl;
-      }
-    }
-  };
-
-  // Use golden function
-  timer.start();
-  RROIAlign_forward_golden(
+  test_RROIAlign_forward(
       batch_size,
       num_rois,
       channels,
@@ -106,24 +326,10 @@ int main()
       pooled_width,
       spatial_scale,
       bottom_data_d.get(),
-      rois_d.get(),
-      top_data_golden_d.get(),
-      0
+      rois_d.get()
       );
-  CUDA_CHECK(cudaDeviceSynchronize());
-  timer.stop();
-  std::cout << "RROIAlign_forward_golden: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("golden", top_data_golden_h.get());
-
-  // CUDA_CHECK(cudaMemset(top_data_d.get(), 0, top_data_size));
-  // std::memset(top_data_h.get(), 0, top_data_size);
-  // CUDA_CHECK(cudaDeviceSynchronize());
-
-  // Test RROIAlign_forward
-  timer.start();
-  RROIAlign_forward(
+  test_RROIPool_forward(
       batch_size,
       num_rois,
       channels,
@@ -133,35 +339,10 @@ int main()
       pooled_width,
       spatial_scale,
       bottom_data_d.get(),
-      rois_d.get(),
-      top_data_d.get(),
-      0
+      rois_d.get()
       );
-  CUDA_CHECK(cudaDeviceSynchronize());
-  timer.stop();
-  std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
 
-  CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("output", top_data_h.get());
-
-  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
-
-  ////////////////////////////////////////////////////////////////////////////////
-  // RROI pooling
-  ////////////////////////////////////////////////////////////////////////////////
-
-  unique_ptr_host<float> top_pool_data_golden_h(nullptr);
-  unique_ptr_device<float> top_pool_data_golden_d(nullptr);
-  unique_ptr_host<float> top_pool_data_h(nullptr);
-  unique_ptr_device<float> top_pool_data_d(nullptr);
-  CUDA_CHECK(cudaMallocHost((void **) &top_pool_data_golden_h, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc((void **) &top_pool_data_golden_d, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMallocHost((void **) &top_pool_data_h, top_data_size * sizeof(float)));
-  CUDA_CHECK(cudaMalloc((void **) &top_pool_data_d, top_data_size * sizeof(float)));
-
-  // Use golden function
-  timer.start();
-  RROIPool_forward_golden(
+  test_bp_rroi_align(
       batch_size,
       num_rois,
       channels,
@@ -171,40 +352,8 @@ int main()
       pooled_width,
       spatial_scale,
       bottom_data_d.get(),
-      rois_d.get(),
-      top_pool_data_golden_d.get(),
-      0
+      rois_d.get()
       );
-  CUDA_CHECK(cudaDeviceSynchronize());
-  timer.stop();
-  std::cout << "RROIPool_forward_golden: " << timer.elapsed() << std::endl;
-
-  CUDA_CHECK(cudaMemcpy(top_pool_data_golden_h.get(), top_pool_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("pool-golden", top_pool_data_golden_h.get());
-
-  timer.start();
-  RROIPool_forward(
-      batch_size,
-      num_rois,
-      channels,
-      height,
-      width,
-      pooled_height,
-      pooled_width,
-      spatial_scale,
-      bottom_data_d.get(),
-      rois_d.get(),
-      top_pool_data_d.get(),
-      0
-      );
-  CUDA_CHECK(cudaDeviceSynchronize());
-  timer.stop();
-  std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
-
-  CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("pool", top_pool_data_h.get());
-
-  test_correctness(top_pool_data_golden_h.get(), top_pool_data_h.get(), top_data_size, 1e-10);
 
   return 0;
 }
