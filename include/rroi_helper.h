@@ -193,6 +193,87 @@ __global__ void compute_roi_pool_pts_local(
   roi_pool_pts[roi_pool_pt_num * 7 + idx] = matrix[3]*(pw+1) + matrix[4]*(ph+1) + matrix[5];
 }
 
+// local memory version
+template <typename T>
+__global__ void compute_rroi_pool_temp(
+    T* __restrict__ roi_pool_pts,
+    int* __restrict__ roi_pool_region,
+    T* __restrict__ roi_pool_tmp,
+    const T* __restrict__ rois,
+    const float spatial_scale,
+    const int roi_pool_pt_num,
+    const int num_rois,
+    const int height, const int width,
+    const int pooled_height, const int pooled_width
+    )
+{
+  T matrix[6];
+
+  // int idx = blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x * blockDim.y + threadIdx.y;
+  int idx = blockIdx.x * (pooled_height * pooled_width) + threadIdx.x * pooled_width + threadIdx.y;
+  if (idx >= num_rois * pooled_height * pooled_width) {
+    return;
+  }
+
+  int pw = threadIdx.y;
+  int ph = threadIdx.x;
+  int n = blockIdx.x;
+
+  compute_transform_matrix(
+      matrix,
+      rois + n*6,
+      spatial_scale,
+      pooled_height,
+      pooled_width);
+
+  // ORDER IN CLOCKWISE OR ANTI-CLOCKWISE
+  // (0,1),(0,0),(1,0),(1,1)
+  T P[8];
+  P[0] = matrix[0]*pw     + matrix[1]*(ph+1) + matrix[2];
+  P[1] = matrix[3]*pw     + matrix[4]*(ph+1) + matrix[5];
+  P[2] = matrix[0]*pw     + matrix[1]*ph     + matrix[2];
+  P[3] = matrix[3]*pw     + matrix[4]*ph     + matrix[5];
+  P[4] = matrix[0]*(pw+1) + matrix[1]*ph     + matrix[2];
+  P[5] = matrix[3]*(pw+1) + matrix[4]*ph     + matrix[5];
+  P[6] = matrix[0]*(pw+1) + matrix[1]*(ph+1) + matrix[2];
+  P[7] = matrix[3]*(pw+1) + matrix[4]*(ph+1) + matrix[5];
+
+  get_rotated_bounding_box(
+      roi_pool_region[roi_pool_pt_num * 0 + idx],     // left
+      roi_pool_region[roi_pool_pt_num * 1 + idx],     // top
+      roi_pool_region[roi_pool_pt_num * 2 + idx],     // right
+      roi_pool_region[roi_pool_pt_num * 3 + idx],     // bottom
+      P,
+      width,
+      height);
+
+  T AB[2];
+  AB[0] = P[0] - P[2];
+  AB[1] = P[1] - P[3];
+  T ABAB = AB[0]*AB[0] +AB[1]*AB[1];
+  T AC[2];
+  AC[0] = P[4] - P[2];
+  AC[1] = P[5] - P[3];
+  T ACAC = AC[0]*AC[0] + AC[1]*AC[1];
+
+  roi_pool_tmp[roi_pool_pt_num * 0 + idx] = AB[0];
+  roi_pool_tmp[roi_pool_pt_num * 1 + idx] = AB[1];
+  roi_pool_tmp[roi_pool_pt_num * 2 + idx] = ABAB;
+  roi_pool_tmp[roi_pool_pt_num * 3 + idx] = AC[0];
+  roi_pool_tmp[roi_pool_pt_num * 4 + idx] = AC[1];
+  roi_pool_tmp[roi_pool_pt_num * 5 + idx] = ACAC;
+
+  roi_pool_pts[roi_pool_pt_num * 0 + idx] = P[0];
+  roi_pool_pts[roi_pool_pt_num * 1 + idx] = P[1];
+  roi_pool_pts[roi_pool_pt_num * 2 + idx] = P[2];
+  roi_pool_pts[roi_pool_pt_num * 3 + idx] = P[3];
+  roi_pool_pts[roi_pool_pt_num * 4 + idx] = P[4];
+  roi_pool_pts[roi_pool_pt_num * 5 + idx] = P[5];
+  roi_pool_pts[roi_pool_pt_num * 6 + idx] = P[6];
+  roi_pool_pts[roi_pool_pt_num * 7 + idx] = P[7];
+}
+
+
 template <typename T>
 __device__ inline void get_rotated_bounding_box_interleaved(
     int& left, int& top,
