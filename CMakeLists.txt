@@ -28,3 +28,7 @@ cuda_add_executable(test_rroi
   src/vincent_rroi_align.cu
   test/test_rroi.cpp)
 target_link_libraries(test_rroi ${CUDA_LIBRARIES})
+
+
+cuda_add_executable(sample_test src/vincent_rroi_align.cu test/sample_test.cpp)
+target_link_libraries(sample_test ${CUDA_LIBRARIES})
