@@ -83,7 +83,7 @@ void test_RROIAlign_forward(
   std::cout << "RROIAlign_forward_golden: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("golden", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("rroi_align.golden", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   // CUDA_CHECK(cudaMemset(top_data_d.get(), 0, top_data_size));
   // std::memset(top_data_h.get(), 0, top_data_size);
@@ -110,7 +110,7 @@ void test_RROIAlign_forward(
   std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("rroi_align.output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
 }
@@ -163,7 +163,7 @@ void test_RROIPool_forward(
   std::cout << "RROIPool_forward_golden: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_pool_data_golden_h.get(), top_pool_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("pool-golden", top_pool_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("rroi_pool.golden", top_pool_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   timer.start();
   RROIPool_forward(
@@ -185,7 +185,7 @@ void test_RROIPool_forward(
   std::cout << "RROIPool_forward: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_pool_data_h.get(), top_pool_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("pool", top_pool_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("rroi_pool.output", top_pool_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   test_correctness(top_pool_data_golden_h.get(), top_pool_data_h.get(), top_data_size, 1e-10);
 }
@@ -238,12 +238,10 @@ void test_bp_rroi_align(
   std::cout << "vincent_rroi_align: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_data_golden_h.get(), top_data_golden_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("vincent_rroi_align", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("bp_rroi_align.golden", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
-#if 0
-  // Test RROIAlign_forward
   timer.start();
-  RROIAlign_forward(
+  bp_rroi_align(
       batch_size,
       num_rois,
       channels,
@@ -259,13 +257,12 @@ void test_bp_rroi_align(
       );
   CUDA_CHECK(cudaDeviceSynchronize());
   timer.stop();
-  std::cout << "RROIAlign_forward: " << timer.elapsed() << std::endl;
+  std::cout << "bp_rroi_align: " << timer.elapsed() << std::endl;
 
   CUDA_CHECK(cudaMemcpy(top_data_h.get(), top_data_d.get(), top_data_size * sizeof(float), cudaMemcpyDeviceToHost));
-  write_output("output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
+  write_output("bp_rroi_align.output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
-  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-4);
-#endif
+  test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-10);
 }
 
 int main()
@@ -316,6 +313,7 @@ int main()
 
   fin.close();
 
+#if 0
   test_RROIAlign_forward(
       batch_size,
       num_rois,
@@ -328,7 +326,9 @@ int main()
       bottom_data_d.get(),
       rois_d.get()
       );
+#endif
 
+#if 0
   test_RROIPool_forward(
       batch_size,
       num_rois,
@@ -341,6 +341,7 @@ int main()
       bottom_data_d.get(),
       rois_d.get()
       );
+#endif
 
   test_bp_rroi_align(
       batch_size,
