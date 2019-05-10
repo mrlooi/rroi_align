@@ -279,8 +279,7 @@ void RROIPool_forward(
     int block_num_y = static_cast<int>(std::ceil(channels * 1.0 / thread_num_y));
     dim3 block(thread_num_x, thread_num_y);
     dim3 grid(block_num_x, block_num_y);
-    size_t shared_mem_size = 8 * thread_num_x * sizeof(float);
-    pool<float><<<grid, block, shared_mem_size, stream>>>(
+    pool<float><<<grid, block, 0, stream>>>(
         top_data_d,
         bottom_data_d,
         roi_pool_pts_d.get(),
