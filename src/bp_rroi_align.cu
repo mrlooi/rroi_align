@@ -6,6 +6,10 @@
 #include "rotate_rect_ops.h"
 #include "cuda_utils.h"
 
+const int TILE_DIM = 32;
+
+#if 0
+// Traspose matrix bottom_data
 template <typename T>
 __global__ void compute_bottom_data_coalesced(
     T* __restrict__ bottom_data_coalesced,
@@ -16,15 +20,75 @@ __global__ void compute_bottom_data_coalesced(
     const int width
     )
 {
-  const int bottom_data_size = batch_size * channels * height * width;
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < bottom_data_size; i += blockDim.x * gridDim.x) {
-    int w = i % width;
-    int h = (i / width) % height;
-    int c = (i / width / height) % channels;
-    int b = i / width / height / channels;
-    bottom_data_coalesced[((b * height + h) * width + w) * channels + c] = bottom_data[i];
-  }
+  const int num_columns = height * width;
+  const int num_rows = batch_size * channels;
+
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+  int row;
+  int column;
+
+  do {
+    row = by * TILE_DIM + threadIdx.y;
+    do {
+      column = bx * TILE_DIM + threadIdx.x;
+
+      if (row < num_rows && column < num_columns) {
+        bottom_data_coalesced[column * num_rows + row] = bottom_data[row * num_columns + column];
+      }
+
+      bx += gridDim.x;
+    } while (column < num_columns);
+    by += gridDim.y;
+  } while (row < num_rows);
 }
+#endif
+
+#if 1
+// Traspose matrix bottom_data using shared memory
+template <typename T>
+__global__ void compute_bottom_data_coalesced(
+    T* __restrict__ bottom_data_coalesced,
+    const T* __restrict__ bottom_data,
+    const int batch_size,
+    const int channels,
+    const int height,
+    const int width
+    )
+{
+  __shared__ T tile[TILE_DIM][TILE_DIM+1];
+
+  const int num_columns = height * width;
+  const int num_rows = batch_size * channels;
+
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+  int row;
+  int column;
+
+  do {
+    row = by * TILE_DIM + threadIdx.y;
+    do {
+      column = bx * TILE_DIM + threadIdx.x;
+
+      if (row < num_rows && column < num_columns) {
+        tile[threadIdx.y][threadIdx.x] = bottom_data[row * num_columns + column];
+      }
+      __syncthreads();
+
+      int transpose_column = by * TILE_DIM + threadIdx.x;
+      int transpose_row = bx * TILE_DIM + threadIdx.y;
+      if (transpose_row < num_columns && transpose_column < num_rows) {
+        bottom_data_coalesced[transpose_row * num_rows + transpose_column] = tile[threadIdx.x][threadIdx.y];
+      }
+
+      bx += gridDim.x;
+    } while (column < num_columns);
+    by += gridDim.y;
+  } while (row < num_rows);
+}
+#endif
+
 
 #if 0
 template <typename T>
@@ -194,7 +258,8 @@ __global__ void bp_rroi_align_kernel(
     const float spatial_scale,
     const int sampling_ratio,
     const int num_rois,
-    const int channels, const int height, const int width,
+    const int batch_size, const int channels,
+    const int height, const int width,
     const int pooled_height, const int pooled_width)
 {
   __shared__ T roi_pool_pts_shared[8];
@@ -263,7 +328,7 @@ __global__ void bp_rroi_align_kernel(
           const T x = roi_pool_pts_shared[0] + static_cast<T>(iy + 0.5) * line_params[0] * mh + static_cast<T>(ix + 0.5) * line_params[2] * mw;
           const T y = roi_pool_pts_shared[1] + static_cast<T>(iy + 0.5) * line_params[1] * mh + static_cast<T>(ix + 0.5) * line_params[3] * mw;
 
-          T val = bilinear_interpolate_coalesced(bottom_data_coalesced, roi_batch_id, c, channels, height, width, y, x);
+          T val = bilinear_interpolate_coalesced(bottom_data_coalesced, roi_batch_id, c, batch_size, channels, height, width, y, x);
           output_val += val;
         }
       }
@@ -300,9 +365,13 @@ void bp_rroi_align(
   CUDA_CHECK(cudaMalloc((void **) &bottom_data_coalesced_d, bottom_data_size * sizeof(float)));
 
   {
-    int num_threads = 512;
-    int num_blocks = static_cast<int>(std::ceil(bottom_data_size * 1.0 / num_threads));
-    compute_bottom_data_coalesced<float><<<num_blocks, num_threads, 0, stream>>>(
+    int block_x = TILE_DIM;
+    int block_y = TILE_DIM;
+    int grid_x = static_cast<int>(std::ceil(height * width * 1.0 / block_x));
+    int grid_y = static_cast<int>(std::ceil(batch_size * channels * 1.0 / block_y));
+    dim3 block(block_x, block_y);
+    dim3 grid(grid_x, grid_y);
+    compute_bottom_data_coalesced<float><<<grid, block, 0, stream>>>(
         bottom_data_coalesced_d.get(),
         bottom_data_d,
         batch_size,
@@ -352,6 +421,7 @@ void bp_rroi_align(
         spatial_scale,
         sampling_ratio,
         num_rois,
+        batch_size,
         channels,
         height,
         width,
