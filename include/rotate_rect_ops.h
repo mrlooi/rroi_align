@@ -549,6 +549,7 @@ template <typename T>
 __device__ T bilinear_interpolate_coalesced(const T* bottom_data,
     const int batch_id,
     const int channel_id,
+    const int batch_size,
     const int channels,
     const int height, const int width,
     T y, T x
@@ -587,10 +588,10 @@ __device__ T bilinear_interpolate_coalesced(const T* bottom_data,
   T hy = 1. - ly, hx = 1. - lx;
 
   // do bilinear interpolation
-  T v1 = bottom_data[((batch_id * height + y_low ) * width + x_low ) * channels + channel_id];
-  T v2 = bottom_data[((batch_id * height + y_low ) * width + x_high) * channels + channel_id];
-  T v3 = bottom_data[((batch_id * height + y_high) * width + x_low ) * channels + channel_id];
-  T v4 = bottom_data[((batch_id * height + y_high) * width + x_high) * channels + channel_id];
+  T v1 = bottom_data[((y_low  * width + x_low ) * batch_size + batch_id) * channels + channel_id];
+  T v2 = bottom_data[((y_low  * width + x_high) * batch_size + batch_id) * channels + channel_id];
+  T v3 = bottom_data[((y_high * width + x_low ) * batch_size + batch_id) * channels + channel_id];
+  T v4 = bottom_data[((y_high * width + x_high) * batch_size + batch_id) * channels + channel_id];
   T w1 = hy * hx, w2 = hy * lx, w3 = ly * hx, w4 = ly * lx;
 
   T val = (w1 * v1 + w2 * v2 + w3 * v3 + w4 * v4);
