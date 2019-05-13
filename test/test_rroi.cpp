@@ -338,7 +338,7 @@ void test_bp_rroi_align_backward(
   CUDA_CHECK(cudaMemcpy(bottom_diff_h.get(), bottom_diff_d.get(), bottom_data_size * sizeof(float), cudaMemcpyDeviceToHost));
   write_output("bp_rroi_align_backward.output", bottom_diff_h.get(), bottom_data_size, channels, height, width);
 
-  test_correctness(bottom_diff_golden_h.get(), bottom_diff_h.get(), bottom_data_size, 1e-6);
+  test_correctness(bottom_diff_golden_h.get(), bottom_diff_h.get(), bottom_data_size, 1e-4);
 }
 
 int main()
