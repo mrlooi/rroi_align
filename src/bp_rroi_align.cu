@@ -124,7 +124,7 @@ __global__ void compute_bottom_data_coalesced(
 #endif
 
 template <typename T>
-__global__ void bp_rroi_align_kernel(
+__global__ void bp_rroi_align_forward_kernel(
     T* __restrict__ top_data,
     const T* __restrict__ bottom_data_coalesced,
     const T* __restrict__ roi_pool_pts,
@@ -214,8 +214,108 @@ __global__ void bp_rroi_align_kernel(
   }
 }
 
+template <typename T>
+__global__ void bp_rroi_align_backward_kernel(
+    T* __restrict__ bottom_diff,
+    const T* __restrict__ top_diff,
+    const T* __restrict__ roi_pool_pts,
+    const T* __restrict__ rois,
+    const float spatial_scale,
+    const int sampling_ratio,
+    const int num_rois,
+    const int batch_size, const int channels,
+    const int height, const int width,
+    const int pooled_height, const int pooled_width)
+{
+  __shared__ T roi_pool_pts_shared[8];
+  __shared__ T line_params[4];
+  __shared__ T rois_shared[6];
+
+  const int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
+
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < roi_pool_pt_num; i += blockDim.x * gridDim.x) {
+    int c = blockIdx.y * blockDim.y + threadIdx.y;
+    if (c < channels) {
+      int pw = i % pooled_width;
+      int ph = (i / pooled_width) % pooled_height;
+      int n = i / pooled_width / pooled_height;
+
+      const T* rois_offset = rois + n * 6;  // batch_ind, xc, yc, w, h, angle
+      if (threadIdx.y < 6) {
+        rois_shared[threadIdx.y] = rois_offset[threadIdx.y];
+      }
+
+      int roi_pool_idx = n * pooled_height * pooled_width + ph * pooled_width + pw;
+      int roi_pool_idx_shared = threadIdx.y;
+      if (roi_pool_idx_shared < 8) {
+        roi_pool_pts_shared[roi_pool_idx_shared] = roi_pool_pts[roi_pool_idx_shared * roi_pool_pt_num + roi_pool_idx];
+      }
+      __syncthreads();
+
+      // compute line params
+      // if (roi_pool_idx_shared < 4) {
+      //   line_params[roi_pool_idx_shared] = roi_pool_pts_shared[((roi_pool_idx_shared / 2) + 1) * 2 % 8 + roi_pool_idx_shared % 2] - roi_pool_pts_shared[roi_pool_idx_shared];
+      // }
+      if (roi_pool_idx_shared < 2) {
+        line_params[roi_pool_idx_shared * 2] = roi_pool_pts_shared[((roi_pool_idx_shared + 1) * 2) % 8] - roi_pool_pts_shared[roi_pool_idx_shared * 2];
+        line_params[roi_pool_idx_shared * 2 + 1] = roi_pool_pts_shared[((roi_pool_idx_shared + 1) * 2) % 8 + 1] - roi_pool_pts_shared[roi_pool_idx_shared * 2 + 1];
+      }
+      __syncthreads();
+
+      int roi_batch_id = rois_shared[0];
+
+      // Force malformed ROIs to be 1x1
+      T roi_width = max(rois_shared[3] * spatial_scale, (T)1.);
+      T roi_height = max(rois_shared[4] * spatial_scale, (T)1.);
+      // We use roi_bin_grid to sample the grid and mimic integral
+      int roi_bin_grid_h = (sampling_ratio > 0) ? sampling_ratio : ceil(roi_height / pooled_height); // e.g., = 2
+      int roi_bin_grid_w = (sampling_ratio > 0) ? sampling_ratio : ceil(roi_width / pooled_width);
+
+      const T mw = 1.0 / roi_bin_grid_w;
+      const T mh = 1.0 / roi_bin_grid_h;
+
+      int top_data_idx = (n * channels + c) * pooled_width * pooled_height + ph * pooled_width + pw;
+      const T top_diff_this_bin = top_diff[top_data_idx];
+      T* offset_bottom_diff = bottom_diff + (roi_batch_id * channels + c) * height * width;
+
+      // We do average (integral) pooling inside a bin
+      const T count = roi_bin_grid_h * roi_bin_grid_w;
+
+      for (int iy = 0; iy < roi_bin_grid_h; iy ++)
+      {
+        for (int ix = 0; ix < roi_bin_grid_w; ix ++)
+        {
+          const T x = roi_pool_pts_shared[0] + static_cast<T>(iy + 0.5) * line_params[0] * mh + static_cast<T>(ix + 0.5) * line_params[2] * mw;
+          const T y = roi_pool_pts_shared[1] + static_cast<T>(iy + 0.5) * line_params[1] * mh + static_cast<T>(ix + 0.5) * line_params[3] * mw;
+
+          T w1, w2, w3, w4;
+          int x_low, x_high, y_low, y_high;
+
+          bilinear_interpolate_gradient(height, width, y, x,
+              w1, w2, w3, w4,
+              x_low, x_high, y_low, y_high,
+              0);
+
+          T g1 = top_diff_this_bin * w1 / count;
+          T g2 = top_diff_this_bin * w2 / count;
+          T g3 = top_diff_this_bin * w3 / count;
+          T g4 = top_diff_this_bin * w4 / count;
+
+          if (x_low >= 0 && x_high >= 0 && y_low >= 0 && y_high >= 0) {
+            atomicAdd(offset_bottom_diff + y_low * width + x_low, static_cast<T>(g1));
+            atomicAdd(offset_bottom_diff + y_low * width + x_high, static_cast<T>(g2));
+            atomicAdd(offset_bottom_diff + y_high * width + x_low, static_cast<T>(g3));
+            atomicAdd(offset_bottom_diff + y_high * width + x_high, static_cast<T>(g4));
+          }
+
+        }
+      }
+    }
+  }
+}
+
 // binlinear interpolation version of RROI align
-void bp_rroi_align(
+void bp_rroi_align_forward(
     int batch_size,
     int num_rois,
     int channels,
@@ -287,7 +387,7 @@ void bp_rroi_align(
     dim3 block(thread_num_x, thread_num_y);
     dim3 grid(block_num_x, block_num_y);
     int sampling_ratio = 0; // default
-    bp_rroi_align_kernel<float><<<grid, block, 0, stream>>>(
+    bp_rroi_align_forward_kernel<float><<<grid, block, 0, stream>>>(
         top_data_d,
         bottom_data_coalesced_d.get(),
         roi_pool_pts_d.get(),
@@ -303,4 +403,74 @@ void bp_rroi_align(
         pooled_width);
     CUDA_CHECK(cudaDeviceSynchronize());
   }
+}
+
+void bp_rroi_align_backward(
+    int batch_size,
+    int num_rois,
+    int channels,
+    int height,
+    int width,
+    int pooled_height,
+    int pooled_width,
+    float spatial_scale,
+    const float* top_diff_d,
+    const float* rois_d,
+    float* bottom_diff_d,
+    cudaStream_t stream
+    )
+{
+  unique_ptr_device<float> roi_pool_pts_d(nullptr);
+  int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
+  CUDA_CHECK(cudaMalloc((void **) &roi_pool_pts_d, 8 * roi_pool_pt_num * sizeof(float)));
+
+  {
+    dim3 block(pooled_height, pooled_width);
+    dim3 grid(num_rois);
+    compute_roi_pool_pts_local<float><<<grid, block, 0, stream>>>(
+        roi_pool_pts_d.get(),
+        rois_d,
+        spatial_scale,
+        roi_pool_pt_num,
+        num_rois,
+        pooled_height,
+        pooled_width);
+  }
+
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  {
+    // cudaDeviceProp deviceProperties;
+    // int gpu_id = 0;
+    // CUDA_CHECK(cudaGetDeviceProperties(&deviceProperties, gpu_id));
+
+    int max_thread_num = 256;
+    // int thread_num_x = std::min(max_thread_num / 8, pooled_width);
+    // int thread_num_y = std::min(max_thread_num / thread_num_x, channels);
+    int thread_num_y = std::min(channels, max_thread_num);
+    // int thread_num_x = max_thread_num / thread_num_y;
+    int thread_num_x = 1;
+    // int block_num_x = std::min(static_cast<int>(std::ceil(pooled_width * pooled_height * num_rois * 1.0 / thread_num_x)), deviceProperties.maxGridSize[0]);
+    int block_num_x = std::min(static_cast<int>(std::ceil(pooled_width * pooled_height * num_rois * 1.0 / thread_num_x)), 65535);
+    int block_num_y = static_cast<int>(std::ceil(channels * 1.0 / thread_num_y));
+    dim3 block(thread_num_x, thread_num_y);
+    dim3 grid(block_num_x, block_num_y);
+    int sampling_ratio = 0; // default
+    bp_rroi_align_backward_kernel<float><<<grid, block, 0, stream>>>(
+        bottom_diff_d,
+        top_diff_d,
+        roi_pool_pts_d.get(),
+        rois_d,
+        spatial_scale,
+        sampling_ratio,
+        num_rois,
+        batch_size,
+        channels,
+        height,
+        width,
+        pooled_height,
+        pooled_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
+  }
+
 }

@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <cstring>
 #include <cmath>
+#include <vector>
 
 #include "cuda_timer.h"
 #include "cuda_utils.h"
@@ -191,7 +192,7 @@ void test_RROIPool_forward(
 }
 
 // binlinear interpolation version of RROI align
-void test_bp_rroi_align(
+void test_bp_rroi_align_forward(
   int batch_size,
   int num_rois,
   int channels,
@@ -241,7 +242,7 @@ void test_bp_rroi_align(
   write_output("bp_rroi_align.golden", top_data_golden_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   timer.start();
-  bp_rroi_align(
+  bp_rroi_align_forward(
       batch_size,
       num_rois,
       channels,
@@ -263,6 +264,81 @@ void test_bp_rroi_align(
   write_output("bp_rroi_align.output", top_data_h.get(), top_data_size, channels, pooled_height, pooled_width);
 
   test_correctness(top_data_golden_h.get(), top_data_h.get(), top_data_size, 1e-10);
+}
+
+// binlinear interpolation version of RROI align
+void test_bp_rroi_align_backward(
+  int batch_size,
+  int num_rois,
+  int channels,
+  int height,
+  int width,
+  int pooled_height,
+  int pooled_width,
+  float spatial_scale,
+  float* top_diff_d,
+  float* rois_d
+  )
+{
+  auto bottom_data_size = batch_size * channels * height * width;
+
+  unique_ptr_host<float> bottom_diff_golden_h(nullptr);
+  unique_ptr_device<float> bottom_diff_golden_d(nullptr);
+  unique_ptr_host<float> bottom_diff_h(nullptr);
+  unique_ptr_device<float> bottom_diff_d(nullptr);
+  CUDA_CHECK(cudaMallocHost((void **) &bottom_diff_golden_h, bottom_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &bottom_diff_golden_d, bottom_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMallocHost((void **) &bottom_diff_h, bottom_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &bottom_diff_d, bottom_data_size * sizeof(float)));
+
+  CUDATimer timer;
+
+  // Use golden function
+  timer.start();
+  vincent_rroi_align_backward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      top_diff_d,
+      rois_d,
+      bottom_diff_golden_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "vincent_rroi_align_backward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(bottom_diff_golden_h.get(), bottom_diff_golden_d.get(), bottom_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("bp_rroi_align_backward.golden", bottom_diff_golden_h.get(), bottom_data_size, channels, height, width);
+
+  timer.start();
+  bp_rroi_align_backward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      top_diff_d,
+      rois_d,
+      bottom_diff_d.get(),
+      0
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+  std::cout << "bp_rroi_align_backward: " << timer.elapsed() << std::endl;
+
+  CUDA_CHECK(cudaMemcpy(bottom_diff_h.get(), bottom_diff_d.get(), bottom_data_size * sizeof(float), cudaMemcpyDeviceToHost));
+  write_output("bp_rroi_align_backward.output", bottom_diff_h.get(), bottom_data_size, channels, height, width);
+
+  test_correctness(bottom_diff_golden_h.get(), bottom_diff_h.get(), bottom_data_size, 1e-6);
 }
 
 int main()
@@ -343,7 +419,7 @@ int main()
       );
 #endif
 
-  test_bp_rroi_align(
+  test_bp_rroi_align_forward(
       batch_size,
       num_rois,
       channels,
@@ -353,6 +429,29 @@ int main()
       pooled_width,
       spatial_scale,
       bottom_data_d.get(),
+      rois_d.get()
+      );
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // backward phrase
+  ////////////////////////////////////////////////////////////////////////////////
+  auto top_data_size = num_rois * channels * pooled_height * pooled_width;
+  std::vector<float> top_diff(top_data_size, 1);
+
+  unique_ptr_device<float> top_diff_d(nullptr);
+  CUDA_CHECK(cudaMalloc((void **) &top_diff_d, top_data_size * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(top_diff_d.get(), &top_diff[0], top_data_size * sizeof(float), cudaMemcpyHostToDevice));
+
+  test_bp_rroi_align_backward(
+      batch_size,
+      num_rois,
+      channels,
+      height,
+      width,
+      pooled_height,
+      pooled_width,
+      spatial_scale,
+      top_diff_d.get(),
       rois_d.get()
       );
 
