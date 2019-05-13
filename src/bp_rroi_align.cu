@@ -124,6 +124,31 @@ __global__ void compute_bottom_data_coalesced(
 #endif
 
 template <typename T>
+__global__ void matrix_transpose(
+    T* __restrict__ transposed_matrix,
+    const T* __restrict__ original_matrix,
+    const int num_columns,
+    const int num_rows
+    )
+{
+  __shared__ T tile[TILE_DIM][TILE_DIM+1];
+
+  int row = blockIdx.y * TILE_DIM + threadIdx.y;
+  int column = blockIdx.x * TILE_DIM + threadIdx.x;
+
+  if (row < num_rows && column < num_columns) {
+    tile[threadIdx.y][threadIdx.x] = original_matrix[row * num_columns + column];
+  }
+  __syncthreads();
+
+  int transpose_column = blockIdx.y * TILE_DIM + threadIdx.x;
+  int transpose_row = blockIdx.x * TILE_DIM + threadIdx.y;
+  if (transpose_row < num_columns && transpose_column < num_rows) {
+    transposed_matrix[transpose_row * num_rows + transpose_column] = tile[threadIdx.x][threadIdx.y];
+  }
+}
+
+template <typename T>
 __global__ void bp_rroi_align_forward_kernel(
     T* __restrict__ top_data,
     const T* __restrict__ bottom_data_coalesced,
@@ -276,7 +301,6 @@ __global__ void bp_rroi_align_backward_kernel(
 
       int top_data_idx = (n * channels + c) * pooled_width * pooled_height + ph * pooled_width + pw;
       const T top_diff_this_bin = top_diff[top_data_idx];
-      T* offset_bottom_diff = bottom_diff + (roi_batch_id * channels + c) * height * width;
 
       // We do average (integral) pooling inside a bin
       const T count = roi_bin_grid_h * roi_bin_grid_w;
@@ -302,10 +326,10 @@ __global__ void bp_rroi_align_backward_kernel(
           T g4 = top_diff_this_bin * w4 / count;
 
           if (x_low >= 0 && x_high >= 0 && y_low >= 0 && y_high >= 0) {
-            atomicAdd(offset_bottom_diff + y_low * width + x_low, static_cast<T>(g1));
-            atomicAdd(offset_bottom_diff + y_low * width + x_high, static_cast<T>(g2));
-            atomicAdd(offset_bottom_diff + y_high * width + x_low, static_cast<T>(g3));
-            atomicAdd(offset_bottom_diff + y_high * width + x_high, static_cast<T>(g4));
+            atomicAdd(bottom_diff + ((y_low  * width + x_low ) * batch_size + roi_batch_id) * channels + c, static_cast<T>(g1));
+            atomicAdd(bottom_diff + ((y_low  * width + x_high) * batch_size + roi_batch_id) * channels + c, static_cast<T>(g2));
+            atomicAdd(bottom_diff + ((y_high * width + x_low ) * batch_size + roi_batch_id) * channels + c, static_cast<T>(g3));
+            atomicAdd(bottom_diff + ((y_high * width + x_high) * batch_size + roi_batch_id) * channels + c, static_cast<T>(g4));
           }
 
         }
@@ -424,6 +448,27 @@ void bp_rroi_align_backward(
   int roi_pool_pt_num = num_rois * pooled_height * pooled_width;
   CUDA_CHECK(cudaMalloc((void **) &roi_pool_pts_d, 8 * roi_pool_pt_num * sizeof(float)));
 
+  unique_ptr_device<float> bottom_diff_coalesced_d(nullptr);
+  auto bottom_data_size = batch_size * channels * height * width;
+  CUDA_CHECK(cudaMalloc((void **) &bottom_diff_coalesced_d, bottom_data_size * sizeof(float)));
+
+  {
+    int block_x = TILE_DIM;
+    int block_y = TILE_DIM;
+    const int num_columns = height * width;
+    const int num_rows = batch_size * channels;
+    int grid_x = static_cast<int>(std::ceil(num_columns * 1.0 / block_x));
+    int grid_y = static_cast<int>(std::ceil(num_rows * 1.0 / block_y));
+    dim3 block(block_x, block_y);
+    dim3 grid(grid_x, grid_y);
+    matrix_transpose<float><<<grid, block, 0, stream>>>(
+        bottom_diff_coalesced_d.get(),
+        bottom_diff_d,
+        num_columns,
+        num_rows
+        );
+  }
+
   {
     dim3 block(pooled_height, pooled_width);
     dim3 grid(num_rois);
@@ -457,7 +502,7 @@ void bp_rroi_align_backward(
     dim3 grid(block_num_x, block_num_y);
     int sampling_ratio = 0; // default
     bp_rroi_align_backward_kernel<float><<<grid, block, 0, stream>>>(
-        bottom_diff_d,
+        bottom_diff_coalesced_d.get(),
         top_diff_d,
         roi_pool_pts_d.get(),
         rois_d,
@@ -470,7 +515,24 @@ void bp_rroi_align_backward(
         width,
         pooled_height,
         pooled_width);
-    CUDA_CHECK(cudaDeviceSynchronize());
   }
 
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  {
+    int block_x = TILE_DIM;
+    int block_y = TILE_DIM;
+    const int num_columns = batch_size * channels;
+    const int num_rows = height * width;
+    int grid_x = static_cast<int>(std::ceil(num_columns * 1.0 / block_x));
+    int grid_y = static_cast<int>(std::ceil(num_rows * 1.0 / block_y));
+    dim3 block(block_x, block_y);
+    dim3 grid(grid_x, grid_y);
+    matrix_transpose<float><<<grid, block, 0, stream>>>(
+        bottom_diff_d,
+        bottom_diff_coalesced_d.get(),
+        num_columns,
+        num_rows
+        );
+  }
 }
