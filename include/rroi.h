@@ -111,7 +111,7 @@ void vincent_rroi_align_backward(
     );
 
 // binlinear interpolation version of RROI align
-void bp_rroi_align(
+void bp_rroi_align_forward(
     int batch_size,
     int num_rois,
     int channels,
@@ -124,4 +124,19 @@ void bp_rroi_align(
     float* rois_d,
     float* top_data_d,
     cudaStream_t stream = 0
+    );
+
+void bp_rroi_align_backward(
+    int batch_size,
+    int num_rois,
+    int channels,
+    int height,
+    int width,
+    int pooled_height,
+    int pooled_width,
+    float spatial_scale,
+    const float* top_diff_d,
+    const float* rois_d,
+    float* bottom_diff_d,
+    cudaStream_t stream
     );
