@@ -31,26 +31,32 @@ __global__ void rotate_nms_kernel(const int n_boxes, const float nms_overlap_thr
   const int col_size =
         min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
 
-  // cache all column data in this block  
+  // cache all column data in this block
   __shared__ float block_boxes[threadsPerBlock * 5];
+  __shared__ float cur_boxes[threadsPerBlock * 5];
+
+  const int block_box_idx = threadsPerBlock * col_start + threadIdx.x;  // current column
   if (threadIdx.x < col_size) {
-    block_boxes[threadIdx.x * 5 + 0] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 0];
-    block_boxes[threadIdx.x * 5 + 1] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 1];
-    block_boxes[threadIdx.x * 5 + 2] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 2];
-    block_boxes[threadIdx.x * 5 + 3] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 3];
-    block_boxes[threadIdx.x * 5 + 4] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 4];
+    block_boxes[threadIdx.x * 5 + 0] = dev_boxes[block_box_idx * 5 + 0];
+    block_boxes[threadIdx.x * 5 + 1] = dev_boxes[block_box_idx * 5 + 1];
+    block_boxes[threadIdx.x * 5 + 2] = dev_boxes[block_box_idx * 5 + 2];
+    block_boxes[threadIdx.x * 5 + 3] = dev_boxes[block_box_idx * 5 + 3];
+    block_boxes[threadIdx.x * 5 + 4] = dev_boxes[block_box_idx * 5 + 4];
   }
+
+  const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;  // current row
+  if (threadIdx.x < row_size) {
+    cur_boxes[threadIdx.x * 5 + 0] = dev_boxes[cur_box_idx * 5 + 0];
+    cur_boxes[threadIdx.x * 5 + 1] = dev_boxes[cur_box_idx * 5 + 1];
+    cur_boxes[threadIdx.x * 5 + 2] = dev_boxes[cur_box_idx * 5 + 2];
+    cur_boxes[threadIdx.x * 5 + 3] = dev_boxes[cur_box_idx * 5 + 3];
+    cur_boxes[threadIdx.x * 5 + 4] = dev_boxes[cur_box_idx * 5 + 4];
+  }
+
   __syncthreads();
 
   // iterate across each row in this block
   if (threadIdx.x < row_size) {
-    const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;  // current row
-    const float *cur_box = dev_boxes + cur_box_idx * 5;
     int i = 0;
     unsigned long long t = 0;
     int start = 0;
@@ -60,7 +66,7 @@ __global__ void rotate_nms_kernel(const int n_boxes, const float nms_overlap_thr
 
     // for this row, calculate all ious with each column
     for (i = start; i < col_size; i++) {
-      float iou = devRotateIoU(cur_box, block_boxes + i * 5);
+      float iou = devRotateIoU(cur_boxes + threadIdx.x * 5, block_boxes + i * 5);
       // printf("iou: %.3f\n", iou);
       if (iou > nms_overlap_thresh) {
         t |= 1ULL << i;  // basically storing all overlaps across the columns, hashed into one single ULL index
