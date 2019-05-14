@@ -8,6 +8,5 @@ int rotate_nms_cuda(
     const int boxes_num, 
     const float nms_threshold, 
     const int max_output,
-    bool train = false,
     cudaStream_t stream = 0
     );
