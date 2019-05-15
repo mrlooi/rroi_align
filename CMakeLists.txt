@@ -10,7 +10,7 @@ find_package(CUDA)  # cuda
 
 list(APPEND CUDA_NVCC_FLAGS "-std=c++11")
 list(APPEND CUDA_NVCC_FLAGS "--compiler-options -fPIC")
-list(APPEND CUDA_NVCC_FLAGS "--ptxas-options=-v")
+# list(APPEND CUDA_NVCC_FLAGS "--ptxas-options=-v")
 # list(APPEND CUDA_NVCC_FLAGS "-maxrregcount=64")
 
 set(CUDA_NVCC_FLAGS_DEBUG   "${CUDA_NVCC_FLAGS_DEBUG};-G;-g")
@@ -26,6 +26,7 @@ cuda_add_executable(test_rroi
   src/RROIAlign_cuda.cu src/rroi_align.cu
   src/RROIPool_cuda.cu src/rroi_pool.cu
   src/vincent_rroi_align.cu src/bp_rroi_align.cu
+  src/rotate_nms_cuda.cu
   test/test_rroi.cpp)
 target_link_libraries(test_rroi ${CUDA_LIBRARIES})
 
