@@ -58,9 +58,49 @@ void gen_testcase(const std::string& filename)
   fout << std::endl;
 }
 
+void gen_nms_testcase(const std::string& filename)
+{
+  const float nms_thresh = 0.5;
+  const int max_output = -1;
+  const int height = 100;
+  const int width = 100;
+  const int num_rois = 2048;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+
+  std::vector<float> rois_flat(num_rois * 5);
+  for (auto i = 0; i < num_rois; i++) {
+    rois_flat[i*5+0] = width / 2;
+    rois_flat[i*5+1] = height / 2;
+    std::uniform_real_distribution<float> dist_w(width / 10, width / 1.5);
+    std::uniform_real_distribution<float> dist_h(height / 10, height / 1.5);
+    std::uniform_real_distribution<float> dist_angle(-90, 90);
+    rois_flat[i*5+2] = dist_w(gen);
+    rois_flat[i*5+3] = dist_h(gen);
+    rois_flat[i*5+4] = dist_angle(gen);
+  }
+
+  std::fstream fout(filename, std::ios::out);
+  fout << nms_thresh      << " "
+       << max_output      << " "
+       << height          << " "
+       << width           << " "
+       << num_rois        << std::endl;
+
+  for (auto i = 0; i < num_rois * 5; i++) {
+    fout << rois_flat[i] << " ";
+  }
+  fout << std::endl;
+}
+
 int main()
 {
   std::string filename = "testcase";
   gen_testcase(filename);
+
+  filename = "nms_testcase";
+  gen_nms_testcase(filename);
+
   return 0;
 }

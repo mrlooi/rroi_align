@@ -9,6 +9,7 @@
 #include "cuda_utils.h"
 
 #include "rroi.h"
+#include "rotate_nms.h"
 
 void test_correctness(float* golden_data, float* output_data, int data_size, const float elapsed = 0.0001f)
 {
@@ -341,9 +342,8 @@ void test_bp_rroi_align_backward(
   test_correctness(bottom_diff_golden_h.get(), bottom_diff_h.get(), bottom_data_size, 1e-4);
 }
 
-int main()
+void test_rroi(std::string& in_filename)
 {
-  std::string in_filename = "testcase";
   std::fstream fin(in_filename, std::ios::in);
 
   int batch_size;
@@ -454,6 +454,59 @@ int main()
       top_diff_d.get(),
       rois_d.get()
       );
+}
+
+void test_nms(std::string& in_filename)
+{
+  std::fstream fin(in_filename, std::ios::in);
+
+  float nms_thresh;
+  int max_output;
+  int height;
+  int width;
+  int num_rois;
+
+  fin >> nms_thresh
+      >> max_output
+      >> height
+      >> width
+      >> num_rois;
+
+  unique_ptr_host<float> rois_h(nullptr);
+  unique_ptr_device<float> rois_d(nullptr);
+  auto rois_size = num_rois * 5;
+  CUDA_CHECK(cudaMallocHost((void **) &rois_h, rois_size * sizeof(float)));
+  CUDA_CHECK(cudaMalloc((void **) &rois_d, rois_size * sizeof(float)));
+
+  for (auto i = 0; i < rois_size; i++) {
+    fin >> rois_h[i];
+  }
+  CUDA_CHECK(cudaMemcpy(rois_d.get(), rois_h.get(), rois_size * sizeof(float), cudaMemcpyHostToDevice));
+
+  unique_ptr_device<int64_t> out_keep(nullptr);
+  CUDATimer timer;
+  timer.start();
+  int num_to_keep = rotate_nms_cuda(
+      rois_d.get(),
+      out_keep.get(),
+      num_rois,
+      nms_thresh,
+      max_output
+      );
+  CUDA_CHECK(cudaDeviceSynchronize());
+  timer.stop();
+
+  std::cout << "golden rotate_nms: " << timer.elapsed() << std::endl;
+  std::cout << "num_to_keep: " << num_to_keep << std::endl;
+}
+
+int main()
+{
+  std::string filename = "testcase";
+  // test_rroi(filename);
+
+  filename = "nms_testcase";
+  test_nms(filename);
 
   return 0;
 }
