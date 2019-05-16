@@ -9,9 +9,7 @@
 #include "cuda_utils.h"
 #include "rotate_rect_ops.h"
 
-#define DIVUP(m,n) ((m) / (n) + ((m) % (n) > 0))
 int const threadsPerBlock = sizeof(unsigned long long) * 8;
-
 
 template <typename T>
 __device__ inline float devRotateIoU(T const * const region1, T const * const region2) {
@@ -144,7 +142,7 @@ void _rotate_nms_launcher(int64_t* keep_out, int* num_out, const float* boxes, i
   CUDA_CHECK(cudaFree(mask_dev));
 }
 
-int rotate_nms_cuda(
+int rotated_nms_golden(
     const float* rois_d,
     int64_t* out_keep,
     const int boxes_num, 

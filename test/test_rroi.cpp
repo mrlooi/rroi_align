@@ -483,21 +483,48 @@ void test_nms(std::string& in_filename)
   }
   CUDA_CHECK(cudaMemcpy(rois_d.get(), rois_h.get(), rois_size * sizeof(float), cudaMemcpyHostToDevice));
 
-  unique_ptr_device<int64_t> out_keep(nullptr);
-  CUDATimer timer;
-  timer.start();
-  int num_to_keep = rotate_nms_cuda(
-      rois_d.get(),
-      out_keep.get(),
-      num_rois,
-      nms_thresh,
-      max_output
-      );
-  CUDA_CHECK(cudaDeviceSynchronize());
-  timer.stop();
+#if 1
+  {
+    unique_ptr_device<int64_t> out_keep(nullptr);
 
-  std::cout << "golden rotate_nms: " << timer.elapsed() << std::endl;
-  std::cout << "num_to_keep: " << num_to_keep << std::endl;
+    CUDATimer timer;
+    timer.start();
+    int num_to_keep = rotated_nms_golden(
+        rois_d.get(),
+        out_keep.get(),
+        num_rois,
+        nms_thresh,
+        max_output
+        );
+    CUDA_CHECK(cudaDeviceSynchronize());
+    timer.stop();
+
+    std::cout << "rotated_nms_golden: " << timer.elapsed() << std::endl;
+    std::cout << "golden num_to_keep: " << num_to_keep << std::endl;
+  }
+#endif
+
+#if 1
+  {
+    unique_ptr_device<int64_t> out_keep(nullptr);
+    CUDA_CHECK(cudaMalloc((void **) &out_keep, num_rois * sizeof(int64_t)));
+
+    CUDATimer timer;
+    timer.start();
+    int num_to_keep = rotated_nms(
+        rois_d.get(),
+        out_keep.get(),
+        num_rois,
+        max_output,
+        nms_thresh
+        );
+    CUDA_CHECK(cudaDeviceSynchronize());
+    timer.stop();
+
+    std::cout << "rotated_nms: " << timer.elapsed() << std::endl;
+    std::cout << "num_to_keep: " << num_to_keep << std::endl;
+  }
+#endif
 }
 
 int main()
