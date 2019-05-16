@@ -67,7 +67,7 @@ int main()
 
     CUDATimer timer;
     timer.start();
-    int num_to_keep = rotate_nms_cuda(
+    int num_to_keep = rotated_nms_golden(
         rois_d.get(),
         out_keep.get(),
         num_rois, 
