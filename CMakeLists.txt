@@ -4,7 +4,7 @@ project (rect_intersects)
 add_definitions("-std=c++11")
 add_definitions("-fPIC")
 
-# set(CMAKE_CXX_FLAGS "-w ${CMAKE_CXX_FLAGS} -fopenmp")
+set(CMAKE_CXX_FLAGS "-w ${CMAKE_CXX_FLAGS} -fopenmp")
 
 find_package(CUDA)  # cuda
 
@@ -45,3 +45,9 @@ target_link_libraries(rotate_nms_test ${CUDA_LIBRARIES})
 
 #cuda_add_executable(torch_test src/vincent_rroi_align.cu test/torch_test.cpp)
 #target_link_libraries(torch_test ${CUDA_LIBRARIES})
+
+
+
+find_package(OpenCV REQUIRED)  # opencv 
+add_executable(rotate_mask_iou test/rotate_mask_iou.cpp)
+target_link_libraries(rotate_mask_iou ${OpenCV_LIBS})
