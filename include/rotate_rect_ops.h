@@ -486,7 +486,7 @@ __DEVICE__ void compute_roi_pool_pts(const T* roi, T* out_pts, const float spati
 
 
 template <typename T>
-__device__ T bilinear_interpolate(const T* bottom_data,
+__DEVICE__ T bilinear_interpolate(const T* bottom_data,
     const int height, const int width,
     T y, T x,
     const int index /* index for debug only*/) {
@@ -536,7 +536,7 @@ __device__ T bilinear_interpolate(const T* bottom_data,
 
 
 template <typename T>
-__device__ T bilinear_interpolate_coalesced(const T* bottom_data,
+__DEVICE__ T bilinear_interpolate_coalesced(const T* bottom_data,
     const int batch_id,
     const int channel_id,
     const int batch_size,
@@ -591,7 +591,7 @@ __device__ T bilinear_interpolate_coalesced(const T* bottom_data,
 
 
 template <typename T>
-__device__ void bilinear_interpolate_gradient(
+__DEVICE__ void bilinear_interpolate_gradient(
     const int height, const int width,
     T y, T x,
     T & w1, T & w2, T & w3, T & w4,

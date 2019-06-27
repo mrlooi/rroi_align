@@ -1,5 +1,5 @@
 import torch
-import _C
+# import _C
 
 import numpy as np
 # import pycocotools.mask as mask_util
@@ -35,7 +35,7 @@ def compute_rotated_proposal_gt_iou(gt_mask, proposal):
 if __name__ == '__main__':
     import time
 
-    ITERS = 100
+    ITERS = 1000
 
     img_h = 800
     img_w = 800
@@ -52,16 +52,16 @@ if __name__ == '__main__':
     t_gtm[:] = torch.from_numpy(gt_mask)
     t_pp[:] = torch.from_numpy(proposal)
 
-    t = time.time()
-    tx = _C.rotate_mask_iou(t_gtm, t_pp)
-    print("%.3f s"%(time.time() - t))
-    print(tx[0])
-
     # t = time.time()
-    # for i in range(ITERS):
-    #     mask_iou = compute_rotated_proposal_gt_iou(gt_mask, proposal)
+    # tx = _C.rotate_mask_iou(t_gtm, t_pp)
     # print("%.3f s"%(time.time() - t))
-    # print(mask_iou)
+    # print(tx[0])
+
+    t = time.time()
+    for i in range(ITERS):
+        mask_iou = compute_rotated_proposal_gt_iou(gt_mask, proposal)
+    print("%.3f s"%(time.time() - t))
+    print(mask_iou)
 
     # gt_mask_color = gt_mask * 255
     # gt_mask_color = cv2.cvtColor(gt_mask_color, cv2.COLOR_GRAY2BGR)

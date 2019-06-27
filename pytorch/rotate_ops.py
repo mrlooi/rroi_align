@@ -68,38 +68,43 @@ def get_rotated_roi_pixel_mapping(roi):
     return M
 
 def paste_rotated_roi_in_image(image, roi_image, roi):
-    assert len(roi) == 5  # xc yc w h angle
 
-    w = roi[2]
-    h = roi[3]
+    rect_pts = np.round(convert_rect_to_pts(roi)).astype(np.int32)
+    image = cv2.fillConvexPoly(image, rect_pts, 1)
+    return image
 
-    w = int(np.round(w))
-    h = int(np.round(h))
-    rh, rw = roi_image.shape[:2]
-    if rw != w or rh != h:
-        roi_image = cv2.resize(roi_image, (w, h))
+    # assert len(roi) == 5  # xc yc w h angle
 
-    # generate the mapping of points from roi_image to an image
-    M = get_rotated_roi_pixel_mapping(roi)
+    # w = roi[2]
+    # h = roi[3]
 
-    x_grid, y_grid = np.meshgrid(np.arange(w), np.arange(h))
-    x_grid = x_grid.reshape(-1)
-    y_grid = y_grid.reshape(-1)
-    map_pts_x = x_grid * M[0, 0] + y_grid * M[0, 1] + M[0, 2]
-    map_pts_y = x_grid * M[1, 0] + y_grid * M[1, 1] + M[1, 2]
-    map_pts_x = np.round(map_pts_x).astype(np.int32)
-    map_pts_y = np.round(map_pts_y).astype(np.int32)
+    # w = int(np.round(w))
+    # h = int(np.round(h))
+    # rh, rw = roi_image.shape[:2]
+    # if rw != w or rh != h:
+    #     roi_image = cv2.resize(roi_image, (w, h))
 
-    # stick onto image
-    im_h, im_w = image.shape[:2]
+    # # generate the mapping of points from roi_image to an image
+    # M = get_rotated_roi_pixel_mapping(roi)
 
-    valid_x = np.logical_and(map_pts_x >= 0, map_pts_x < im_w)
-    valid_y = np.logical_and(map_pts_y >= 0, map_pts_y < im_h)
-    valid = np.logical_and(valid_x, valid_y)
-    image[map_pts_y[valid], map_pts_x[valid]] = roi_image[y_grid[valid], x_grid[valid]]
+    # x_grid, y_grid = np.meshgrid(np.arange(w), np.arange(h))
+    # x_grid = x_grid.reshape(-1)
+    # y_grid = y_grid.reshape(-1)
+    # map_pts_x = x_grid * M[0, 0] + y_grid * M[0, 1] + M[0, 2]
+    # map_pts_y = x_grid * M[1, 0] + y_grid * M[1, 1] + M[1, 2]
+    # map_pts_x = np.round(map_pts_x).astype(np.int32)
+    # map_pts_y = np.round(map_pts_y).astype(np.int32)
 
-    # close holes that arise due to rounding from the pixel mapping phase
-    kernel = np.ones((5, 5), np.uint8)
-    image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+    # # stick onto image
+    # im_h, im_w = image.shape[:2]
+
+    # valid_x = np.logical_and(map_pts_x >= 0, map_pts_x < im_w)
+    # valid_y = np.logical_and(map_pts_y >= 0, map_pts_y < im_h)
+    # valid = np.logical_and(valid_x, valid_y)
+    # image[map_pts_y[valid], map_pts_x[valid]] = roi_image[y_grid[valid], x_grid[valid]]
+
+    # # close holes that arise due to rounding from the pixel mapping phase
+    # kernel = np.ones((5, 5), np.uint8)
+    # image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
 
     return image

@@ -15,28 +15,29 @@ def get_extensions(extensions_dir, extension_name):
     this_dir = os.path.dirname(os.path.abspath(__file__))
     extensions_dir = os.path.join(this_dir, extensions_dir)
 
-    source_cpu = glob.glob(os.path.join(extensions_dir, "*.cpp"))
+    main_file = glob.glob(os.path.join(extensions_dir, "*.cpp"))
+    source_cpu = glob.glob(os.path.join(extensions_dir, "cpu", "*.cpp"))
+    source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
 
-    sources = source_cpu
+    sources = main_file + source_cpu
     extension = CppExtension
 
-    extra_compile_args = {"cxx": ["-std=c++11","-fopenmp"]}
+    extra_compile_args = {"cxx": ["-std=c++11", "-fopenmp"]}
     define_macros = []
 
-    # source_cuda = glob.glob(os.path.join(extensions_dir, "cuda", "*.cu"))
-    # if (torch.cuda.is_available() and CUDA_HOME is not None) or os.getenv("FORCE_CUDA", "0") == "1":
-    #     extension = CUDAExtension
-    #     sources += source_cuda
-    #     define_macros += [("WITH_CUDA", None)]
-    #     extra_compile_args["nvcc"] = [
-    #         "-DCUDA_HAS_FP16=1",
-    #         "-D__CUDA_NO_HALF_OPERATORS__",
-    #         "-D__CUDA_NO_HALF_CONVERSIONS__",
-    #         "-D__CUDA_NO_HALF2_OPERATORS__",
-    #         "-O3",
-    #         "-DNDEBUG",
-    #         "--use_fast_math"
-    #     ]
+    if (torch.cuda.is_available() and CUDA_HOME is not None) or os.getenv("FORCE_CUDA", "0") == "1":
+        extension = CUDAExtension
+        sources += source_cuda
+        define_macros += [("WITH_CUDA", None)]
+        extra_compile_args["nvcc"] = [
+            "-DCUDA_HAS_FP16=1",
+            "-D__CUDA_NO_HALF_OPERATORS__",
+            "-D__CUDA_NO_HALF_CONVERSIONS__",
+            "-D__CUDA_NO_HALF2_OPERATORS__",
+            "-O3",
+            "-DNDEBUG",
+            "--use_fast_math"
+        ]
 
     sources = [os.path.join(extensions_dir, s) for s in sources]
 
@@ -59,11 +60,11 @@ if __name__ == '__main__':
     from setuptools import find_packages
     from setuptools import setup
 
-    extensions_dir = "./cpu"
+    extensions_dir = "./csrc"
     extension_name = "_C"
     ext_modules = []
     ext_modules += get_extensions(extensions_dir, extension_name)
-    
+
     setup(
         name="rotate_ops",
         version="0.1",

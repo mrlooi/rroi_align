@@ -173,8 +173,8 @@ if __name__ == '__main__':
     boxes = np.array([[0, 0, 100, 100], [200, 200, 400, 400], [220, 220, 420, 420], [200, 240, 400, 440], [240, 200, 440, 400], [1, 1, 2, 2]], dtype=np.float32)
     boxscores = np.array([0.95, 0.9, 0.8, 0.7, 0.6, 0.5], dtype=np.float32)
 
-    nms_thresh = 0.5
-    METHOD = 2
+    nms_thresh = 0.3
+    METHOD = 1
 
     dets = np.hstack((boxes, boxscores[:,np.newaxis]))
     keep = cpu_soft_nms(dets, Nt=nms_thresh, method=METHOD)

@@ -1,9 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <torch/extension.h>
-
-#include "rotate_mask_iou_impl.h"
+#include "cpu/vision.h"
 
 
 // Interface for Python
@@ -13,7 +10,10 @@ at::Tensor rotate_mask_iou(
 {
   if (gt_masks.type().is_cuda())
   {
+#ifdef WITH_CUDA
+#else
     AT_ERROR("Not compiled with GPU support");
+#endif
   }
 
   return rotate_mask_iou_cpu(gt_masks, proposals);

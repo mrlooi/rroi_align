@@ -2,8 +2,7 @@
 
 #include <omp.h>
 
-#include "rotate_mask_iou_impl.h"
-
+#include "cpu/vision.h"
 
 
 template <typename scalar_t>
