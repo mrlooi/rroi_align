@@ -7,7 +7,7 @@ at::Tensor nms_cpu(const at::Tensor& dets,
                    const at::Tensor& scores,
                    const float threshold);
 
-at::Tensor soft_nms_cpu(const at::Tensor& dets,
+at::Tensor soft_nms_cpu(at::Tensor& dets,
                    at::Tensor& scores,
                    const float nms_thresh=0.3,
                    const float sigma=0.5,

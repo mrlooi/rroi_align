@@ -133,8 +133,65 @@ at::Tensor nms_cuda(const at::Tensor& boxes, float nms_overlap_thresh) {
                      }).sort(0, false));
 }
 
+__global__ void soft_nms_kernel(const int n_boxes, const float nms_overlap_thresh,
+                           const float *dev_boxes, float *dev_scores, 
+                           const float sigma, const int method) 
+{
+  const int row_start = blockIdx.y;
+  const int col_start = blockIdx.x;
 
-at::Tensor soft_nms_cuda(const at::Tensor& dets,
+  // if (row_start > col_start) return;
+
+  const int row_size =
+        min(n_boxes - row_start * threadsPerBlock, threadsPerBlock);
+  const int col_size =
+        min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
+
+  __shared__ float block_boxes[threadsPerBlock * 4];
+  if (threadIdx.x < col_size) {
+    block_boxes[threadIdx.x * 4 + 0] =
+        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 4 + 0];
+    block_boxes[threadIdx.x * 4 + 1] =
+        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 4 + 1];
+    block_boxes[threadIdx.x * 4 + 2] =
+        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 4 + 2];
+    block_boxes[threadIdx.x * 4 + 3] =
+        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 4 + 3];
+  }
+  __syncthreads();
+
+  if (threadIdx.x < row_size) {
+    const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
+    const float *cur_box = dev_boxes + cur_box_idx * 4;
+    int i = 0;
+    int start = 0;
+    if (row_start == col_start) {
+      start = threadIdx.x + 1;
+    }
+    for (i = start; i < col_size; i++) 
+    {
+      float ovr = devIoU(cur_box, block_boxes + i * 4);
+      if (ovr > nms_overlap_thresh) 
+      {
+        float weight = 1.0f;
+        if (method == NMS_METHOD::LINEAR)
+        {
+          weight = weight - ovr;
+        } else if (method == NMS_METHOD::GAUSSIAN)
+        {
+          weight = exp(-(ovr * ovr) / sigma);
+        } else {
+          weight = 0.0f;
+        }
+        // atomicMul(dev_scores[threadsPerBlock * col_start + i], weight);
+      }
+    }
+  }
+}
+
+
+
+at::Tensor soft_nms_cuda(const at::Tensor& boxes,
   at::Tensor& scores,
   const float nms_thresh,
   const float sigma,
@@ -142,15 +199,38 @@ at::Tensor soft_nms_cuda(const at::Tensor& dets,
   const int method
   )
 {
+  using scalar_t = float;
+
   at::Tensor result;
   if (method == NMS_METHOD::LINEAR || method == NMS_METHOD::GAUSSIAN)
   {
-    AT_DISPATCH_FLOATING_TYPES(dets.type(), "soft_nms", [&] {
-      // result = soft_nms_cpu_kernel<scalar_t>(dets, scores, nms_thresh, sigma, score_thresh, method);
-    });
+    AT_ASSERTM(boxes.type().is_cuda(), "boxes must be a CUDA tensor");
+    AT_ASSERTM(scores.type().is_cuda(), "scores must be a CUDA tensor");
+    
+    auto order_t = std::get<1>(scores.sort(0, /* descending=*/true));
+    auto boxes_sorted = boxes.index_select(0, order_t);
+    auto scores_sorted = scores.index_select(0, order_t);
+
+    int boxes_num = boxes.size(0);
+
+    const int col_blocks = THCCeilDiv(boxes_num, threadsPerBlock);
+
+    scalar_t* boxes_dev = boxes_sorted.contiguous().data<scalar_t>();
+    scalar_t* scores_dev = scores_sorted.contiguous().data<scalar_t>();
+
+    THCState *state = at::globalContext().lazyInitCUDA(); // TODO replace with getTHCState
+
+    dim3 blocks(THCCeilDiv(boxes_num, threadsPerBlock),
+                THCCeilDiv(boxes_num, threadsPerBlock));
+    dim3 threads(threadsPerBlock);
+    soft_nms_kernel<<<blocks, threads>>>(boxes_num,
+                                    nms_thresh,
+                                    boxes_dev,
+                                    scores_dev,
+                                    sigma, method);
   } else {
     // original nms
-    auto b = at::cat({dets, scores.unsqueeze(1)}, 1);
+    auto b = at::cat({boxes, scores.unsqueeze(1)}, 1);
     result = nms_cuda(b, nms_thresh);
   }
 

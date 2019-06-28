@@ -27,7 +27,7 @@ at::Tensor nms(const at::Tensor& dets,
   return result;
 }
 
-at::Tensor soft_nms(const at::Tensor& dets,
+at::Tensor soft_nms(at::Tensor& dets,
                 at::Tensor& scores,
                 const float nms_thresh=0.3,
                 const float sigma=0.5,

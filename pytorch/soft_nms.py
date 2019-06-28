@@ -116,17 +116,17 @@ def py_cpu_softnms(dets, Nt=0.3, sigma=0.5, thresh=0.001, method=2):
         tBD = dets[i, :].copy()
         pos = i + 1
 
-        # # SORT
-        # scores = dets[:, 4]#.copy()
-        # if i != N-1:
-        #     maxscore = np.max(scores[pos:], axis=0)
-        #     maxpos = np.argmax(scores[pos:], axis=0)
-        # else:
-        #     maxscore = scores[-1]
-        #     maxpos = 0
-        # if scores[i] < maxscore:
-        #     dets[i, :] = dets[maxpos + i + 1, :]
-        #     dets[maxpos + i + 1, :] = tBD
+        # SORT
+        scores = dets[:, 4]#.copy()
+        if i != N-1:
+            maxpos = np.argmax(scores[pos:], axis=0)
+            maxscore = scores[pos + maxpos]
+        else:
+            maxscore = scores[-1]
+            maxpos = 0
+        if scores[i] < maxscore:
+            dets[i, :] = dets[maxpos + i + 1, :]
+            dets[maxpos + i + 1, :] = tBD
 
         # IoU calculate
         xx1 = np.maximum(dets[i, 0], dets[pos:, 0])
@@ -170,18 +170,26 @@ if __name__ == '__main__':
     np.set_printoptions(suppress=True)
 
     # boxes and scores
-    boxes = np.array([[0, 0, 100, 100], [200, 200, 400, 400], [220, 220, 420, 420], [200, 240, 400, 440], [240, 200, 440, 400], [1, 1, 2, 2]], dtype=np.float32)
-    boxscores = np.array([0.95, 0.9, 0.8, 0.7, 0.6, 0.5], dtype=np.float32)
+    # boxes = np.array([[0, 0, 100, 100], [200, 200, 400, 400], [220, 220, 420, 420], [200, 240, 400, 440], [240, 200, 440, 400], [1, 1, 2, 2]], dtype=np.float32)
+    # boxscores = np.array([0.95, 0.9, 0.55, 0.6, 0.7, 0.5], dtype=np.float32)
+    boxes = np.array([
+        [0, 0, 100, 100], 
+        [30, 30, 130, 130], 
+        [50, 50, 150, 150], 
+        [60, 60, 150, 150], 
+    ], dtype=np.float32)
+    boxscores = np.array([0.95, 0.9, 0.85, 0.9], dtype=np.float32)
 
     nms_thresh = 0.3
-    METHOD = 1
+    METHOD = 2
 
     dets = np.hstack((boxes, boxscores[:,np.newaxis]))
     keep = cpu_soft_nms(dets, Nt=nms_thresh, method=METHOD)
 
-    # boxes2 = boxes.copy()
-    # boxscores2 = boxscores.copy()
+    # # boxes2 = boxes.copy()
+    # # boxscores2 = boxscores.copy()
     dets2 = np.hstack((boxes, boxscores[:,np.newaxis]))
+    # dets2 = dets2[np.argsort(boxscores)[::-1]]
     keep2 = py_cpu_softnms(dets2, Nt=nms_thresh, method=METHOD)
 
     print(dets[keep])
