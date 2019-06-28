@@ -37,10 +37,10 @@ at::Tensor soft_nms(at::Tensor& dets,
 
   if (dets.type().is_cuda()) {
 #ifdef WITH_CUDA
-    if (dets.numel() == 0)
-      return at::empty({0}, dets.options().dtype(at::kLong).device(at::kCPU));
-    return soft_nms_cuda(dets, scores, nms_thresh, sigma, score_thresh, method);
-#else
+//     if (dets.numel() == 0)
+//       return at::empty({0}, dets.options().dtype(at::kLong).device(at::kCPU));
+//     return soft_nms_cuda(dets, scores, nms_thresh, sigma, score_thresh, method);
+// #else
     AT_ERROR("Not compiled with GPU support");
 #endif
   }

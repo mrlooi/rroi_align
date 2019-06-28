@@ -19,7 +19,7 @@ at::Tensor rotate_nms_cpu(const at::Tensor& dets,
                    const at::Tensor& scores,
                    const float threshold);
 
-at::Tensor rotate_soft_nms_cpu(const at::Tensor& dets,
+at::Tensor rotate_soft_nms_cpu(at::Tensor& dets,
                    at::Tensor& scores,
                    const float nms_thresh=0.3,
                    const float sigma=0.5,

@@ -14,7 +14,7 @@ at::Tensor rotate_nms(const at::Tensor& dets,
   return result;
 }
 
-at::Tensor rotate_soft_nms(const at::Tensor& dets,
+at::Tensor rotate_soft_nms(at::Tensor& dets,
                 at::Tensor& scores,
                 const float nms_thresh=0.3,
                 const float sigma=0.5,
