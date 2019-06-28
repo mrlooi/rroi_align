@@ -9,10 +9,8 @@ def rotate_soft_nms(boxes, scores, nms_thresh=0.3, sigma=0.5, thresh=0.001, meth
     # method: 1) linear, 2) gaussian, else) original NMS
     boxes2 = boxes.clone()
     scores2 = scores.clone()
-    keep = _C.rotate_soft_nms(boxes2, scores2, nms_thresh, sigma, thresh, method)
-    scores[:] = scores2[:]
-    boxes[:] = boxes2[:]
-    return keep
+    indices, keep = _C.rotate_soft_nms(boxes2, scores2, nms_thresh, sigma, thresh, method)
+    return indices, keep, scores2
 
 if __name__ == '__main__':
     np.set_printoptions(suppress=True, precision=4)
@@ -47,8 +45,10 @@ if __name__ == '__main__':
     print(t_dets[keep])
 
     t_dets2 = t_dets.clone()
-    soft_keep = rotate_soft_nms(t_dets2[:, :-1], t_dets2[:, -1], nms_thresh=nms_thresh, method=METHOD)
+    indices, soft_keep, scores2 = rotate_soft_nms(t_dets2[:, :-1], t_dets2[:, -1], nms_thresh=nms_thresh, method=METHOD)
 
+    t_dets2 = t_dets2[indices]
+    t_dets2[:,-1] = scores2
     print(soft_keep)
     with np.printoptions(precision=3):
         print(t_dets2[soft_keep].numpy())

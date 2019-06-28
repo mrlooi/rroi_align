@@ -30,11 +30,11 @@ if __name__ == '__main__':
         [60, 60, 150, 150], 
     ], dtype=np.float32)
     boxscores = np.array([0.95, 0.9, 0.85, 0.9], dtype=np.float32)
-    boxes = np.tile(boxes, [REPS, 1])
-    boxscores = np.tile(boxscores, REPS)
+    # boxes = np.tile(boxes, [REPS, 1])
+    # boxscores = np.tile(boxscores, REPS)
 
     nms_thresh = 0.3
-    METHOD = 2
+    METHOD = 1
 
     t_boxes = torch.from_numpy(boxes)
     t_boxscores = torch.from_numpy(boxscores)

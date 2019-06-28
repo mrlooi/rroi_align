@@ -14,7 +14,7 @@ at::Tensor rotate_nms(const at::Tensor& dets,
   return result;
 }
 
-at::Tensor rotate_soft_nms(at::Tensor& dets,
+std::tuple<at::Tensor, at::Tensor> rotate_soft_nms(at::Tensor& dets,
                 at::Tensor& scores,
                 const float nms_thresh=0.3,
                 const float sigma=0.5,
@@ -26,6 +26,5 @@ at::Tensor rotate_soft_nms(at::Tensor& dets,
     AT_ERROR("Not compiled with GPU support");
   }
 
-  at::Tensor result = rotate_soft_nms_cpu(dets, scores, nms_thresh, sigma, score_thresh, method);
-  return result;
+  return rotate_soft_nms_cpu(dets, scores, nms_thresh, sigma, score_thresh, method);
 }

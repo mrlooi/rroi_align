@@ -76,6 +76,7 @@ at::Tensor rotate_nms_cpu_kernel(const at::Tensor& dets,
 template <typename scalar_t>
 at::Tensor rotate_soft_nms_cpu_kernel(at::Tensor& dets,
                           at::Tensor& scores,
+                          at::Tensor& indices,
                           const float nms_thresh,
                           const float sigma,
                           const float score_thresh,
@@ -90,10 +91,11 @@ at::Tensor rotate_soft_nms_cpu_kernel(at::Tensor& dets,
     return at::empty({0}, dets.options().dtype(at::kLong).device(at::kCPU));
   }
 
+  auto ndets = dets.size(0);
   auto scores_d = scores.contiguous().data<scalar_t>();
   auto dets_d = dets.contiguous().data<scalar_t>();
   
-  auto ndets = dets.size(0);
+  auto indices_d = indices.contiguous().data<int64_t>();
 
   for (int64_t i = 0; i < ndets; i++) {
     int64_t pos = i + 1;
@@ -121,6 +123,11 @@ at::Tensor rotate_soft_nms_cpu_kernel(at::Tensor& dets,
       tmp = scores_d[i];
       scores_d[i] = maxscore;
       scores_d[maxpos+pos] = tmp;
+
+      int64_t tmp_i = indices_d[i];
+      indices_d[i] = indices_d[maxpos + pos];
+      indices_d[maxpos + pos] = tmp_i;
+
     }
 
     const scalar_t* bbox = dets_d + (i*5);
@@ -150,7 +157,9 @@ at::Tensor rotate_soft_nms_cpu_kernel(at::Tensor& dets,
       score_j *= weight;
    }
   }
-  return at::nonzero(scores >= score_thresh).squeeze(1);
+  auto keep = at::nonzero(scores >= score_thresh).squeeze(1);
+
+  return keep;
 }
 
 
@@ -166,18 +175,21 @@ at::Tensor rotate_nms_cpu(const at::Tensor& dets,
 }
 
 
-at::Tensor rotate_soft_nms_cpu(at::Tensor& dets,
+std::tuple<at::Tensor, at::Tensor> rotate_soft_nms_cpu(at::Tensor& dets,
                at::Tensor& scores,
                const float nms_thresh,
                const float sigma,
                const float score_thresh,
                const int method
-               ) {
-  at::Tensor result;
+               ) 
+{
+  auto N = dets.size(0);
+  at::Tensor keep;
+  at::Tensor indices = at::arange(N, dets.options().dtype(at::kLong).device(at::kCPU));
   if (method == NMS_METHOD::LINEAR || method == NMS_METHOD::GAUSSIAN)
   {
     AT_DISPATCH_FLOATING_TYPES(dets.type(), "rotate_soft_nms", [&] {
-      result = rotate_soft_nms_cpu_kernel<scalar_t>(dets, scores, nms_thresh, sigma, score_thresh, method);
+      keep = rotate_soft_nms_cpu_kernel<scalar_t>(dets, scores, indices, nms_thresh, sigma, score_thresh, method);
     });
     // auto scores_d = scores.contiguous().data<float>();
     // for (int i = 0; i < scores.size(0); ++i)
@@ -187,9 +199,8 @@ at::Tensor rotate_soft_nms_cpu(at::Tensor& dets,
   } else {
     // original nms
     AT_DISPATCH_FLOATING_TYPES(dets.type(), "nms", [&] {
-      result = rotate_nms_cpu_kernel<scalar_t>(dets, scores, nms_thresh);
+      keep = rotate_nms_cpu_kernel<scalar_t>(dets, scores, nms_thresh);
     });
   }
-
-  return result;
+  return std::make_tuple(indices, keep);
 }
